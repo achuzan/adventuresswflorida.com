@@ -1,0 +1,3 @@
+/* Cloudflare Pages — SPA fallback for React Router */
+/* https://developers.cloudflare.com/pages/configuration/serving-pages/#single-page-application-spa-routing */
+/*/index.html  200
