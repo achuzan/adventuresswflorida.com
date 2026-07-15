@@ -38,7 +38,7 @@ export function GalleryPage() {
 
       <p className="gallery-note">
         Bring home your piece of Southwest Florida.{' '}
-        <a href={site.shopUrl} target="_blank" rel="noreferrer">
+        <a href={site.shopUrl}>
           Shop Adventures in Southwest Florida
         </a>
         .

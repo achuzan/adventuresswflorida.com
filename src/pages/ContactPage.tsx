@@ -34,7 +34,7 @@ export function ContactPage() {
           <span>Facebook</span>
           <strong>Adventures SW Florida</strong>
         </a>
-        <a className="contact-row" href={site.shopUrl} target="_blank" rel="noreferrer">
+        <a className="contact-row" href={site.shopUrl}>
           <span>Print Shop</span>
           <strong>shop.adventuresswflorida.com</strong>
         </a>

@@ -27,7 +27,7 @@ export function Footer() {
               <Link to="/contact">Contact</Link>
             </li>
             <li>
-              <a href={site.shopUrl} target="_blank" rel="noreferrer">
+              <a href={site.shopUrl}>
                 Print Shop
               </a>
             </li>

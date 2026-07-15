@@ -32,7 +32,7 @@ export function HomePage() {
             <Link className="btn btn--light" to="/gallery">
               View Gallery
             </Link>
-            <a className="btn btn--accent" href={site.shopUrl} target="_blank" rel="noreferrer">
+            <a className="btn btn--accent" href={site.shopUrl}>
               Shop Prints
             </a>
           </div>
@@ -78,7 +78,7 @@ export function HomePage() {
             Choose a favorite image from the gallery, then order museum-quality prints, canvases,
             and more from the shop — fulfilled through Printify.
           </p>
-          <a className="btn btn--accent" href={site.shopUrl} target="_blank" rel="noreferrer">
+          <a className="btn btn--accent" href={site.shopUrl}>
             Visit the Print Shop
           </a>
         </div>

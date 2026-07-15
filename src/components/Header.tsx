@@ -75,12 +75,7 @@ export function Header() {
               {link.label}
             </NavLink>
           ))}
-          <a
-            className="btn btn--accent site-nav__shop"
-            href={site.shopUrl}
-            target="_blank"
-            rel="noreferrer"
-          >
+          <a className="btn btn--accent site-nav__shop" href={site.shopUrl}>
             Shop Prints
           </a>
         </nav>
