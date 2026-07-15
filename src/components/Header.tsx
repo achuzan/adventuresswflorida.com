@@ -40,7 +40,7 @@ export function Header() {
       <div className="site-header__inner">
         <Link to="/" className="brand-lockup" onClick={() => setOpen(false)}>
           <img
-            src="/brand/logo-clear-bg.png"
+            src="/brand/logo.png"
             alt=""
             className="brand-lockup__mark"
             width={56}

@@ -180,8 +180,7 @@ main {
 }
 
 .site-header.is-solid {
-  background: rgba(245, 248, 247, 0.92);
-  backdrop-filter: blur(12px);
+  background: #f5f8f7;
   box-shadow: 0 1px 0 var(--line);
 }
 
@@ -210,7 +209,7 @@ main {
   height: 3.1rem;
   object-fit: contain;
   flex-shrink: 0;
-  filter: drop-shadow(0 2px 8px rgba(0, 0, 0, 0.18));
+  filter: drop-shadow(0 2px 10px rgba(0, 0, 0, 0.28));
 }
 
 .brand-lockup__text {
@@ -316,6 +315,10 @@ main {
   min-height: 100svh;
 }
 
+.hero__frame.photo-frame {
+  height: 100%;
+}
+
 .hero__frame img,
 .hero__frame .photo-frame__placeholder {
   animation: hero-drift 18s ease-in-out infinite alternate;
@@ -344,7 +347,7 @@ main {
   width: clamp(7rem, 18vw, 10rem);
   height: auto;
   margin-bottom: 1rem;
-  filter: drop-shadow(0 8px 24px rgba(0, 0, 0, 0.35));
+  filter: drop-shadow(0 10px 28px rgba(0, 0, 0, 0.4));
 }
 
 .hero__brand {
@@ -374,7 +377,6 @@ main {
   position: relative;
   overflow: hidden;
   width: 100%;
-  height: 100%;
   background-size: cover;
   background-position: center;
 }
@@ -426,7 +428,6 @@ main {
 }
 
 .section__intro p,
-.band__copy p,
 .about-teaser__copy p {
   color: color-mix(in srgb, var(--ink) 78%, transparent);
 }
@@ -458,6 +459,8 @@ main {
 }
 
 .featured__item .photo-frame {
+  position: absolute;
+  inset: 0;
   transition: transform 700ms ease;
 }
 
@@ -488,9 +491,12 @@ main {
 }
 
 .band {
+  position: relative;
   max-width: none;
   margin: 0;
   padding-inline: max(var(--space), calc((100% - var(--max)) / 2));
+  overflow: hidden;
+  isolation: isolate;
 }
 
 .band--mangrove {
@@ -500,13 +506,52 @@ main {
   color: #f3f8f6;
 }
 
+.band--photo {
+  color: #f3f8f6;
+  min-height: clamp(18rem, 42vw, 26rem);
+  display: grid;
+  align-items: center;
+}
+
+.band__media {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+}
+
+.band__frame {
+  width: 100%;
+  height: 100%;
+  min-height: clamp(18rem, 42vw, 26rem);
+}
+
+.band__frame img,
+.band__frame .photo-frame__placeholder {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.band__veil {
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(90deg, rgba(12, 28, 26, 0.82) 0%, rgba(12, 28, 26, 0.55) 48%, rgba(12, 28, 26, 0.35) 100%),
+    linear-gradient(180deg, rgba(12, 28, 26, 0.2), rgba(12, 28, 26, 0.45));
+}
+
 .band__copy {
+  position: relative;
   max-width: 38rem;
   padding-block: clamp(3rem, 7vw, 4.5rem);
 }
 
 .band__copy h2 {
   font-size: clamp(1.9rem, 3.5vw, 2.6rem);
+}
+
+.band__copy p {
+  color: rgba(243, 248, 246, 0.9);
 }
 
 .band__copy .btn {
@@ -592,7 +637,8 @@ main {
 .gallery-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 1.25rem 1rem;
+  gap: 1.75rem 1.15rem;
+  align-items: start;
 }
 
 .gallery-card {
@@ -603,12 +649,18 @@ main {
   text-align: left;
   cursor: zoom-in;
   color: inherit;
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
   animation: rise 700ms cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
 .gallery-card .photo-frame {
   aspect-ratio: 4 / 5;
-  margin-bottom: 0.7rem;
+  width: 100%;
+  height: auto;
+  flex: 0 0 auto;
+  margin-bottom: 0;
 }
 
 .gallery-card:nth-child(3n) .photo-frame {
@@ -618,6 +670,8 @@ main {
 .gallery-card__meta {
   display: grid;
   gap: 0.1rem;
+  position: relative;
+  z-index: 1;
 }
 
 .gallery-card__meta strong {
@@ -840,23 +894,29 @@ main {
   .site-nav {
     position: fixed;
     inset: var(--header-h) 0 0;
+    z-index: 50;
     flex-direction: column;
     align-items: stretch;
     gap: 0;
     padding: 1rem var(--space) 2rem;
-    background: rgba(245, 248, 247, 0.98);
+    background: #f5f8f7;
     transform: translateY(-110%);
-    opacity: 0;
+    visibility: hidden;
     pointer-events: none;
-    transition:
-      transform 260ms ease,
-      opacity 260ms ease;
+    transition: transform 260ms ease, visibility 260ms ease;
   }
 
   .site-nav.is-open {
     transform: translateY(0);
-    opacity: 1;
+    visibility: visible;
     pointer-events: auto;
+  }
+
+  .site-header.is-solid .site-nav a:not(.btn),
+  .site-nav.is-open a:not(.btn) {
+    color: var(--ink);
+    text-shadow: none;
+    opacity: 0.9;
   }
 
   .site-nav a:not(.btn) {

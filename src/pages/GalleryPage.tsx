@@ -37,7 +37,7 @@ export function GalleryPage() {
       </div>
 
       <p className="gallery-note">
-        Prefer a print?{' '}
+        Bring home your piece of Southwest Florida.{' '}
         <a href={site.shopUrl} target="_blank" rel="noreferrer">
           Shop Adventures in Southwest Florida
         </a>

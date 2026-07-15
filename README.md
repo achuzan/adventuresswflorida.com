@@ -41,5 +41,5 @@ npm run preview
 
 ## Brand assets
 
-- `public/brand/logo-clear-bg.png` — transparent (nav / hero)
-- `public/brand/logo-white-bg.png` — white background (footer / favicon)
+- `public/brand/logo.png` — circular logo with transparent background (used on site)
+- `public/brand/logo-white-bg.png` / `logo-clear-bg.png` — original exports (kept for reference)

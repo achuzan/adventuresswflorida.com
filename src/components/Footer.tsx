@@ -8,7 +8,7 @@ export function Footer() {
     <footer className="site-footer">
       <div className="site-footer__grid">
         <div className="site-footer__brand">
-          <img src="/brand/logo-white-bg.png" alt={site.brand} width={88} height={88} />
+          <img src="/brand/logo.png" alt={site.brand} width={88} height={88} />
           <p>
             Wildlife photography by {site.photographer}. Based in {site.baseLocation}.
           </p>

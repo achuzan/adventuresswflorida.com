@@ -7,7 +7,8 @@ export function HomePage() {
   const featured = featuredPhotoIds
     .map((id) => photos.find((p) => p.id === id))
     .filter((p): p is (typeof photos)[number] => Boolean(p))
-  const hero = photos.find((p) => p.id === 'spoonbill') ?? photos[0]
+  const hero = photos.find((p) => p.id === 'alligator') ?? photos[0]
+  const shopBand = photos.find((p) => p.id === 'scrub-jay') ?? photos[1] ?? hero
 
   return (
     <>
@@ -20,7 +21,7 @@ export function HomePage() {
         <div className="hero__content">
           <img
             className="hero__logo"
-            src="/brand/logo-clear-bg.png"
+            src="/brand/logo.png"
             alt={site.brand}
             width={160}
             height={160}
@@ -66,7 +67,11 @@ export function HomePage() {
         </div>
       </section>
 
-      <section className="section band band--mangrove">
+      <section className="section band band--photo">
+        <div className="band__media" aria-hidden>
+          <PhotoFrame photo={shopBand} className="band__frame" />
+          <div className="band__veil" />
+        </div>
         <div className="band__copy">
           <h2>Prints that bring the wild indoors</h2>
           <p>

@@ -7,9 +7,9 @@ When a file is present, it replaces the branded placeholder automatically.
 |------|---------|
 | `florida-scrub-jay.jpg` | Florida Scrub Jay with Acorn |
 | `pileated-woodpecker.jpg` | Pileated Woodpecker |
-| `roseate-spoonbill.jpg` | Roseate Spoonbill at Sunrise (also used as homepage hero) |
+| `roseate-spoonbill.jpg` | Roseate Spoonbill at Sunrise |
 | `curious-raccoon.jpg` | Curious Raccoon |
-| `alligator.jpg` | Alligator at Rest |
+| `alligator.jpg` | Alligator at Rest (homepage hero) |
 | `cypress-light.jpg` | Light Through the Slough |
 | `anole.jpg` | Green Anole |
 | `wetland-dusk.jpg` | Wetland Dusk |
