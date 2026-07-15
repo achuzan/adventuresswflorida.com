@@ -30,14 +30,21 @@ npm run build
 npm run preview
 ```
 
-## Deploy (Cloudflare Pages)
+## Deploy (Cloudflare)
 
-1. Push this repo to GitHub
-2. In Cloudflare Pages: **Create project** → connect the repo
-3. Build command: `npm run build`
-4. Output directory: `dist`
-5. Attach `adventuresswflorida.com` in Custom domains
-6. Keep `shop.adventuresswflorida.com` pointed at Printify
+This project deploys as a Worker with static assets (SPA mode in `wrangler.toml`).
+
+1. Push to GitHub — Cloudflare rebuilds automatically
+2. Or deploy manually:
+
+```bash
+npm run build
+npx wrangler deploy
+```
+
+Attach `adventuresswflorida.com` as a custom domain in Workers & Pages. Keep `shop.` on Printify.
+
+SPA routing uses `assets.not_found_handling = "single-page-application"` (do not use a `/* /index.html 200` `_redirects` rule — Workers rejects it).
 
 ## Brand assets
 
