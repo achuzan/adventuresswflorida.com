@@ -9,6 +9,13 @@ export const site = {
   socials: {
     instagram: 'https://www.instagram.com/adventuresswflorida/',
     facebook: 'https://www.facebook.com/adventuresswflorida',
+    youtube: 'https://www.youtube.com/@AdventuresSWFlorida',
+    threads: 'https://www.threads.com/@adventuresswflorida',
+    pinterest: 'https://www.pinterest.com/adventuresswflorida',
+    bluesky: 'https://bsky.app/profile/adventuresswfl.bsky.social',
+    tiktok: 'https://www.tiktok.com/@adventuresswflori4',
+    blog: 'https://adventuresswflorida.blogspot.com/',
+    spotify: 'https://push.fm/fl/o3uoxgwh',
   },
   aboutIntro:
     'Welcome to Adventures in Southwest Florida Photography, your gateway to the stunning natural beauty and diverse wildlife of Southwest Florida. My name is Brad Kemp, and I am passionate about capturing the essence of this remarkable region through my lens.',

@@ -50,6 +50,41 @@ export function Footer() {
                 Facebook
               </a>
             </li>
+            <li>
+              <a href={site.socials.youtube} target="_blank" rel="noreferrer">
+                YouTube
+              </a>
+            </li>
+            <li>
+              <a href={site.socials.threads} target="_blank" rel="noreferrer">
+                Threads
+              </a>
+            </li>
+            <li>
+              <a href={site.socials.pinterest} target="_blank" rel="noreferrer">
+                Pinterest
+              </a>
+            </li>
+            <li>
+              <a href={site.socials.bluesky} target="_blank" rel="noreferrer">
+                Bluesky
+              </a>
+            </li>
+            <li>
+              <a href={site.socials.tiktok} target="_blank" rel="noreferrer">
+                TikTok
+              </a>
+            </li>
+            <li>
+              <a href={site.socials.blog} target="_blank" rel="noreferrer">
+                Blog
+              </a>
+            </li>
+            <li>
+              <a href={site.socials.spotify} target="_blank" rel="noreferrer">
+                Spotify
+              </a>
+            </li>
           </ul>
         </div>
       </div>
