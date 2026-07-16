@@ -1,7 +1,7 @@
 import { Link } from 'react-router-dom'
 import { featuredPhotoIds, photoPath, photos } from '../data/photos'
 import { PhotoFrame } from '../components/PhotoFrame'
-import { JsonLd, pageMeta, SeoHead } from '../seo'
+import { homeJsonLd, JsonLd, pageMeta, SeoHead } from '../seo'
 import { site } from '../site'
 
 export function HomePage() {
@@ -11,91 +11,10 @@ export function HomePage() {
   const hero = photos.find((p) => p.id === 'alligator') ?? photos[0]
   const shopBand = photos.find((p) => p.id === 'scrub-jay') ?? photos[1] ?? hero
 
-  const jsonLd = [
-    {
-      '@context': 'https://schema.org',
-      '@type': 'WebSite',
-      name: site.brand,
-      url: site.siteUrl,
-      description: site.tagline,
-      publisher: {
-        '@type': 'Person',
-        name: site.photographer,
-      },
-    },
-    {
-      '@context': 'https://schema.org',
-      '@type': 'Person',
-      name: site.photographer,
-      jobTitle: 'Wildlife Photographer',
-      url: site.siteUrl,
-      email: site.email,
-      address: {
-        '@type': 'PostalAddress',
-        addressLocality: 'Lehigh Acres',
-        addressRegion: 'FL',
-        addressCountry: 'US',
-      },
-      image: `${site.siteUrl}/brand/logo.png`,
-      sameAs: Object.values(site.socials),
-      knowsAbout: [
-        'Wildlife photography',
-        'Southwest Florida',
-        'Fine art prints',
-        'Bird photography',
-        'Wetland ecosystems',
-      ],
-    },
-    {
-      '@context': 'https://schema.org',
-      '@type': 'ProfessionalService',
-      name: site.brand,
-      url: site.siteUrl,
-      image: `${site.siteUrl}${site.defaultOgImage}`,
-      description: site.tagline,
-      areaServed: {
-        '@type': 'AdministrativeArea',
-        name: 'Southwest Florida',
-      },
-      address: {
-        '@type': 'PostalAddress',
-        addressLocality: 'Lehigh Acres',
-        addressRegion: 'FL',
-        addressCountry: 'US',
-      },
-      founder: {
-        '@type': 'Person',
-        name: site.photographer,
-      },
-      makesOffer: {
-        '@type': 'Offer',
-        itemOffered: {
-          '@type': 'Product',
-          name: 'Wildlife fine art prints',
-          url: site.shopUrl,
-        },
-      },
-    },
-    {
-      '@context': 'https://schema.org',
-      '@type': 'ImageGallery',
-      name: `${site.brand} Gallery`,
-      url: `${site.siteUrl}/gallery`,
-      description: 'Wildlife photography from Southwest Florida preserves, parks, and shoreline.',
-      associatedMedia: featured.map((photo) => ({
-        '@type': 'ImageObject',
-        contentUrl: `${site.siteUrl}/photos/${photo.file}`,
-        name: photo.title,
-        description: photo.alt,
-        contentLocation: photo.location,
-      })),
-    },
-  ]
-
   return (
     <>
       <SeoHead {...pageMeta.home} />
-      <JsonLd data={jsonLd} />
+      <JsonLd data={homeJsonLd()} />
 
       <section className="hero">
         <div className="hero__media" aria-hidden>

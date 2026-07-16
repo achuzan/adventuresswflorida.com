@@ -1,22 +1,9 @@
 import { useEffect } from 'react'
 import { site } from './site'
+import { absoluteUrl, type PageMeta } from './seo-meta'
 
-export type PageMeta = {
-  title: string
-  description: string
-  path?: string
-  image?: string
-  type?: 'website' | 'article'
-  noindex?: boolean
-}
-
-function absoluteUrl(pathOrUrl: string) {
-  if (pathOrUrl.startsWith('http://') || pathOrUrl.startsWith('https://')) {
-    return pathOrUrl
-  }
-  const path = pathOrUrl.startsWith('/') ? pathOrUrl : `/${pathOrUrl}`
-  return `${site.siteUrl}${path}`
-}
+export { pageMeta, photoPageMeta, homeJsonLd, photoJsonLd } from './seo-meta'
+export type { PageMeta } from './seo-meta'
 
 function setMeta(attr: 'name' | 'property', key: string, content: string) {
   let el = document.head.querySelector<HTMLMetaElement>(`meta[${attr}="${key}"]`)
@@ -87,34 +74,3 @@ export function JsonLd({ data }: JsonLdProps) {
 
   return null
 }
-
-export const pageMeta = {
-  home: {
-    title: 'Wildlife Photography & Fine Art Prints | Adventures in Southwest Florida',
-    description:
-      'Wildlife photography by Brad Kemp — Adventures in Southwest Florida. Explore the gallery and shop fine-art prints from sloughs, beaches, and wild edges.',
-    path: '/',
-    image: site.defaultOgImage,
-  },
-  gallery: {
-    title: `Southwest Florida Wildlife Photo Gallery · ${site.shortBrand}`,
-    description:
-      'Browse wildlife photography from Southwest Florida — alligators, scrub jays, egrets, and wetland moments. Open any image for the story and shop prints.',
-    path: '/gallery',
-    image: '/photos/florida-scrub-jay.jpg',
-  },
-  about: {
-    title: `About Brad Kemp · Wildlife Photographer · ${site.shortBrand}`,
-    description:
-      'Meet Brad Kemp, wildlife photographer based in Lehigh Acres, Florida. Adventures in Southwest Florida captures alligators, birds, and wild edges across Lee County and beyond.',
-    path: '/about',
-    image: site.defaultOgImage,
-  },
-  contact: {
-    title: `Contact Brad Kemp · ${site.shortBrand}`,
-    description:
-      'Contact Brad Kemp for wildlife photography questions, print licensing, and custom orders. Adventures in Southwest Florida — Lehigh Acres, Florida.',
-    path: '/contact',
-    image: site.defaultOgImage,
-  },
-} as const

@@ -1,57 +1,26 @@
-import { Link, Navigate, useParams } from 'react-router-dom'
+import { Link, useParams } from 'react-router-dom'
 import { PhotoFrame } from '../components/PhotoFrame'
-import { getPhotoById, photoImageUrl, photoPath, photos } from '../data/photos'
-import { JsonLd, SeoHead } from '../seo'
+import { getPhotoById, photoPath, photos } from '../data/photos'
+import { JsonLd, photoJsonLd, photoPageMeta, SeoHead } from '../seo'
 import { site } from '../site'
+import { NotFoundPage } from './NotFoundPage'
 
 export function PhotoPage() {
   const { photoId = '' } = useParams()
   const photo = getPhotoById(photoId)
 
   if (!photo) {
-    return <Navigate to="/gallery" replace />
+    return <NotFoundPage />
   }
 
   const index = photos.findIndex((p) => p.id === photo.id)
   const prev = photos[(index - 1 + photos.length) % photos.length]
   const next = photos[(index + 1) % photos.length]
-  const imagePath = photoImageUrl(photo)
-  const pagePath = photoPath(photo.id)
-  const title = `${photo.title} · ${photo.location} Wildlife Photography`
-  const description = `${photo.story.slice(0, 155).trim()}${photo.story.length > 155 ? '…' : ''}`
-
-  const jsonLd = {
-    '@context': 'https://schema.org',
-    '@type': 'Photograph',
-    name: photo.title,
-    description: photo.story,
-    image: `${site.siteUrl}${imagePath}`,
-    contentLocation: {
-      '@type': 'Place',
-      name: photo.location,
-    },
-    creator: {
-      '@type': 'Person',
-      name: site.photographer,
-      url: site.siteUrl,
-    },
-    copyrightHolder: {
-      '@type': 'Person',
-      name: site.photographer,
-    },
-    url: `${site.siteUrl}${pagePath}`,
-  }
 
   return (
     <div className="page page--photo">
-      <SeoHead
-        title={title}
-        description={description}
-        path={pagePath}
-        image={imagePath}
-        type="article"
-      />
-      <JsonLd data={jsonLd} />
+      <SeoHead {...photoPageMeta(photo)} />
+      <JsonLd data={photoJsonLd(photo)} />
 
       <nav className="photo-page__crumbs" aria-label="Breadcrumb">
         <Link to="/gallery">Gallery</Link>

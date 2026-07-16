@@ -6,6 +6,7 @@ import { GalleryPage } from './pages/GalleryPage'
 import { PhotoPage } from './pages/PhotoPage'
 import { AboutPage } from './pages/AboutPage'
 import { ContactPage } from './pages/ContactPage'
+import { NotFoundPage } from './pages/NotFoundPage'
 import { useEffect } from 'react'
 import { useLocation } from 'react-router-dom'
 
@@ -30,6 +31,7 @@ export default function App() {
             <Route path="/gallery/:photoId" element={<PhotoPage />} />
             <Route path="/about" element={<AboutPage />} />
             <Route path="/contact" element={<ContactPage />} />
+            <Route path="*" element={<NotFoundPage />} />
           </Routes>
         </main>
         <Footer />
