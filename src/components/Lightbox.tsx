@@ -34,19 +34,21 @@ export function Lightbox({ photoId, onClose, onPrev, onNext }: Props) {
       <div className="lightbox__panel">
         <PhotoFrame photo={photo} className="lightbox__frame" priority />
         <div className="lightbox__meta">
-          <h2>{photo.title}</h2>
-          <p>{photo.location}</p>
-        </div>
-        <div className="lightbox__controls">
-          <button type="button" onClick={onPrev}>
-            Previous
-          </button>
-          <button type="button" onClick={onClose}>
-            Close
-          </button>
-          <button type="button" onClick={onNext}>
-            Next
-          </button>
+          <div>
+            <h2>{photo.title}</h2>
+            <p>{photo.location}</p>
+          </div>
+          <div className="lightbox__controls">
+            <button type="button" onClick={onPrev}>
+              Previous
+            </button>
+            <button type="button" onClick={onClose}>
+              Close
+            </button>
+            <button type="button" onClick={onNext}>
+              Next
+            </button>
+          </div>
         </div>
       </div>
     </div>
