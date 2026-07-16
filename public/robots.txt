@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://adventuresswflorida.com/sitemap.xml

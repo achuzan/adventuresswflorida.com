@@ -1,8 +1,10 @@
+import { pageMeta, SeoHead } from '../seo'
 import { site } from '../site'
 
 export function AboutPage() {
   return (
     <div className="page page--narrow">
+      <SeoHead {...pageMeta.about} />
       <header className="page-hero">
         <p className="eyebrow">About</p>
         <h1>{site.photographer}</h1>

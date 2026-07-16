@@ -1,3 +1,4 @@
+import { pageMeta, SeoHead } from '../seo'
 import { site } from '../site'
 
 const contactLinks = [
@@ -67,6 +68,7 @@ const contactLinks = [
 export function ContactPage() {
   return (
     <div className="page page--narrow">
+      <SeoHead {...pageMeta.contact} />
       <header className="page-hero">
         <h1>Contact</h1>
         <p>

@@ -660,9 +660,10 @@ main {
   padding: 0;
   position: relative;
   overflow: hidden;
-  cursor: zoom-in;
+  cursor: pointer;
   color: #f7faf9;
   min-height: 0;
+  text-decoration: none;
   animation: rise 800ms cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
@@ -745,6 +746,116 @@ main {
 .gallery-note {
   margin-top: 2.5rem;
   color: color-mix(in srgb, var(--ink) 72%, transparent);
+}
+
+/* Photo detail */
+.page--photo {
+  max-width: calc(var(--max) + 4rem);
+}
+
+.photo-page__crumbs {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 1.5rem;
+  font-size: 0.9rem;
+  color: color-mix(in srgb, var(--ink) 65%, transparent);
+}
+
+.photo-page__crumbs a {
+  text-decoration: none;
+  font-weight: 600;
+  color: var(--mangrove);
+}
+
+.photo-page__crumbs a:hover {
+  color: var(--orange-deep);
+}
+
+.photo-page__layout {
+  display: grid;
+  gap: clamp(1.5rem, 4vw, 2.75rem);
+  align-items: start;
+}
+
+@media (min-width: 900px) {
+  .photo-page__layout {
+    grid-template-columns: minmax(0, 1.35fr) minmax(16rem, 0.85fr);
+  }
+}
+
+.photo-page__frame {
+  aspect-ratio: 4 / 3;
+  width: 100%;
+  box-shadow: 0 18px 50px rgba(18, 40, 36, 0.18);
+}
+
+.photo-page__copy h1 {
+  font-size: clamp(1.85rem, 4vw, 2.75rem);
+  margin-bottom: 0.75rem;
+}
+
+.photo-page__story {
+  font-size: 1.08rem;
+  color: color-mix(in srgb, var(--ink) 82%, transparent);
+}
+
+.photo-page__credit {
+  font-size: 0.92rem;
+  color: color-mix(in srgb, var(--ink) 62%, transparent);
+}
+
+.photo-page__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 1rem 1.35rem;
+  margin-top: 0.5rem;
+}
+
+.photo-page__pager {
+  display: grid;
+  gap: 1rem;
+  margin-top: clamp(2.5rem, 5vw, 3.5rem);
+  padding-top: 1.5rem;
+  border-top: 1px solid var(--line);
+}
+
+@media (min-width: 640px) {
+  .photo-page__pager {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+.photo-page__nav {
+  display: grid;
+  gap: 0.25rem;
+  text-decoration: none;
+  color: inherit;
+  padding: 0.35rem 0;
+}
+
+.photo-page__nav--next {
+  text-align: right;
+}
+
+.photo-page__nav-label {
+  font-size: 0.75rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--bark);
+  opacity: 0.7;
+}
+
+.photo-page__nav strong {
+  font-family: var(--font-display);
+  font-weight: 650;
+  font-size: 1.05rem;
+}
+
+.photo-page__nav:hover strong {
+  color: var(--orange-deep);
 }
 
 /* Contact */

@@ -1,12 +1,13 @@
-import { BrowserRouter, Routes, Route, useLocation } from 'react-router-dom'
-import { useEffect } from 'react'
+import { BrowserRouter, Routes, Route } from 'react-router-dom'
 import { Header } from './components/Header'
 import { Footer } from './components/Footer'
 import { HomePage } from './pages/HomePage'
 import { GalleryPage } from './pages/GalleryPage'
+import { PhotoPage } from './pages/PhotoPage'
 import { AboutPage } from './pages/AboutPage'
 import { ContactPage } from './pages/ContactPage'
-import { site } from './site'
+import { useEffect } from 'react'
+import { useLocation } from 'react-router-dom'
 
 function ScrollToTop() {
   const { pathname } = useLocation()
@@ -16,31 +17,17 @@ function ScrollToTop() {
   return null
 }
 
-function DocumentTitle() {
-  const { pathname } = useLocation()
-  useEffect(() => {
-    const titles: Record<string, string> = {
-      '/': site.brand,
-      '/gallery': `Gallery · ${site.shortBrand}`,
-      '/about': `About · ${site.shortBrand}`,
-      '/contact': `Contact · ${site.shortBrand}`,
-    }
-    document.title = titles[pathname] ?? site.brand
-  }, [pathname])
-  return null
-}
-
 export default function App() {
   return (
     <BrowserRouter>
       <ScrollToTop />
-      <DocumentTitle />
       <div className="app-shell">
         <Header />
         <main>
           <Routes>
             <Route path="/" element={<HomePage />} />
             <Route path="/gallery" element={<GalleryPage />} />
+            <Route path="/gallery/:photoId" element={<PhotoPage />} />
             <Route path="/about" element={<AboutPage />} />
             <Route path="/contact" element={<ContactPage />} />
           </Routes>

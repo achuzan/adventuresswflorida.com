@@ -1,0 +1,132 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"
+        xmlns:image="http://www.google.com/schemas/sitemap-image/1.1">
+  <url>
+    <loc>https://adventuresswflorida.com/</loc>
+    <changefreq>weekly</changefreq>
+    <priority>1.0</priority>
+  </url>
+  <url>
+    <loc>https://adventuresswflorida.com/gallery</loc>
+    <changefreq>weekly</changefreq>
+    <priority>0.9</priority>
+  </url>
+  <url>
+    <loc>https://adventuresswflorida.com/about</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.7</priority>
+  </url>
+  <url>
+    <loc>https://adventuresswflorida.com/contact</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  <url>
+    <loc>https://adventuresswflorida.com/gallery/scrub-jay</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.8</priority>
+    <image:image>
+      <image:loc>https://adventuresswflorida.com/photos/florida-scrub-jay.jpg</image:loc>
+      <image:title>Florida Scrub Jay with Acorn</image:title>
+    </image:image>
+  </url>
+  <url>
+    <loc>https://adventuresswflorida.com/gallery/snailkite</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.8</priority>
+    <image:image>
+      <image:loc>https://adventuresswflorida.com/photos/snailkite.jpg</image:loc>
+      <image:title>Snail Kite</image:title>
+    </image:image>
+  </url>
+  <url>
+    <loc>https://adventuresswflorida.com/gallery/claw</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.8</priority>
+    <image:image>
+      <image:loc>https://adventuresswflorida.com/photos/claw.jpg</image:loc>
+      <image:title>Iguana Claw</image:title>
+    </image:image>
+  </url>
+  <url>
+    <loc>https://adventuresswflorida.com/gallery/greategret</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.8</priority>
+    <image:image>
+      <image:loc>https://adventuresswflorida.com/photos/greategret.jpg</image:loc>
+      <image:title>Great Egret</image:title>
+    </image:image>
+  </url>
+  <url>
+    <loc>https://adventuresswflorida.com/gallery/alligator</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.8</priority>
+    <image:image>
+      <image:loc>https://adventuresswflorida.com/photos/alligator.jpg</image:loc>
+      <image:title>Alligator at Rest</image:title>
+    </image:image>
+  </url>
+  <url>
+    <loc>https://adventuresswflorida.com/gallery/destinbeachsunset</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.8</priority>
+    <image:image>
+      <image:loc>https://adventuresswflorida.com/photos/destinbeachsunset.jpg</image:loc>
+      <image:title>Sunset at Destin Beach Florida</image:title>
+    </image:image>
+  </url>
+  <url>
+    <loc>https://adventuresswflorida.com/gallery/malewoodduck</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.8</priority>
+    <image:image>
+      <image:loc>https://adventuresswflorida.com/photos/malewoodduck.jpg</image:loc>
+      <image:title>Male Wood Duck</image:title>
+    </image:image>
+  </url>
+  <url>
+    <loc>https://adventuresswflorida.com/gallery/flamingo</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.8</priority>
+    <image:image>
+      <image:loc>https://adventuresswflorida.com/photos/flamingo.jpg</image:loc>
+      <image:title>Flamingo at Sarasota Jungle Gardens Florida</image:title>
+    </image:image>
+  </url>
+  <url>
+    <loc>https://adventuresswflorida.com/gallery/flamingo2</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.8</priority>
+    <image:image>
+      <image:loc>https://adventuresswflorida.com/photos/flamingo2.jpg</image:loc>
+      <image:title>Flamingo Sleeping at Sarasota Jungle Gardens Florida</image:title>
+    </image:image>
+  </url>
+  <url>
+    <loc>https://adventuresswflorida.com/gallery/alligator2</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.8</priority>
+    <image:image>
+      <image:loc>https://adventuresswflorida.com/photos/alligator2.jpg</image:loc>
+      <image:title>Alligator with spider on its head at Lakes Park Florida</image:title>
+    </image:image>
+  </url>
+  <url>
+    <loc>https://adventuresswflorida.com/gallery/pigfrog</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.8</priority>
+    <image:image>
+      <image:loc>https://adventuresswflorida.com/photos/pigfrog.jpg</image:loc>
+      <image:title>Pig Frog at Six Mile Cypress Slough Preserve Florida</image:title>
+    </image:image>
+  </url>
+  <url>
+    <loc>https://adventuresswflorida.com/gallery/parrot</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.8</priority>
+    <image:image>
+      <image:loc>https://adventuresswflorida.com/photos/parrot.jpg</image:loc>
+      <image:title>Parrot at Sarasota Jungle Gardens Florida</image:title>
+    </image:image>
+  </url>
+</urlset>

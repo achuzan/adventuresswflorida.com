@@ -1,11 +1,13 @@
 export const site = {
   brand: 'Adventures in Southwest Florida',
   shortBrand: 'Adventures SW Florida',
+  siteUrl: 'https://adventuresswflorida.com',
   tagline: 'Wildlife photography from the sloughs, beaches, and wild edges of Southwest Florida.',
   photographer: 'Brad Kemp',
   baseLocation: 'Lehigh Acres, Florida',
   email: 'adventuresswflorida@gmail.com',
   shopUrl: 'https://shop.adventuresswflorida.com',
+  defaultOgImage: '/photos/alligator.jpg',
   socials: {
     instagram: 'https://www.instagram.com/adventuresswflorida/',
     facebook: 'https://www.facebook.com/adventuresswflorida',
