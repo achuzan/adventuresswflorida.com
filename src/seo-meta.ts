@@ -133,14 +133,6 @@ export function homeJsonLd(): Record<string, unknown>[] {
         '@type': 'Person',
         name: site.photographer,
       },
-      makesOffer: {
-        '@type': 'Offer',
-        itemOffered: {
-          '@type': 'Product',
-          name: 'Wildlife fine art prints',
-          url: site.shopUrl,
-        },
-      },
     },
     {
       '@context': 'https://schema.org',
