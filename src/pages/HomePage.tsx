@@ -39,7 +39,7 @@ export function HomePage() {
               View Gallery
             </Link>
             <a className="btn btn--accent" href={site.shopUrl}>
-              Shop Collection
+              Shop Prints
             </a>
           </div>
         </div>
