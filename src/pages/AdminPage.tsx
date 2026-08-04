@@ -120,7 +120,10 @@ export function AdminPage() {
     }
   }
 
-  async function saveShopUrl(photo: Photo, nextUrl: string) {
+  async function savePhoto(
+    photo: Photo,
+    patch: Pick<Photo, 'title' | 'location' | 'alt' | 'story'> & { shopUrl: string },
+  ) {
     setBusy(true)
     setNotice(null)
     setFormError(null)
@@ -129,17 +132,23 @@ export function AdminPage() {
         method: 'PATCH',
         credentials: 'same-origin',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ shopUrl: nextUrl.trim() }),
+        body: JSON.stringify({
+          title: patch.title.trim(),
+          location: patch.location.trim(),
+          alt: patch.alt.trim(),
+          story: patch.story.trim(),
+          shopUrl: patch.shopUrl.trim(),
+        }),
       })
       const data = (await res.json().catch(() => null)) as { error?: string } | null
       if (!res.ok) {
         setFormError(data?.error ?? `Could not update ${photo.title}`)
         return
       }
-      setNotice(`Updated shop link for “${photo.title}”.`)
+      setNotice(`Updated “${patch.title.trim() || photo.title}”.`)
       await refresh()
     } catch {
-      setFormError('Could not save shop link')
+      setFormError('Could not save photo')
     } finally {
       setBusy(false)
     }
@@ -184,7 +193,7 @@ export function AdminPage() {
       <header className="page-hero admin-intro">
         <p className="eyebrow">Private</p>
         <h1>Gallery admin</h1>
-        <p>Add photos and attach a Printify / shop collection link for each one.</p>
+        <p>Add photos, edit existing ones, and attach a Printify / shop collection link for each.</p>
       </header>
 
       {session === 'checking' && <p className="admin-status">Checking session…</p>}
@@ -280,10 +289,10 @@ export function AdminPage() {
           </form>
 
           <section className="admin-card">
-            <h2>Collection links</h2>
+            <h2>Edit photos</h2>
             <p className="admin-hint">
-              Each gallery photo can point to its own product or collection in the shop. Leave blank to
-              use the main shop URL.
+              Update title, location, alt text, story, and shop link. Leave the shop link blank to use
+              the main shop URL.
             </p>
             <ul className="admin-photo-list">
               {photos.map((photo) => (
@@ -291,7 +300,7 @@ export function AdminPage() {
                   key={photo.id}
                   photo={photo}
                   busy={busy}
-                  onSave={(url) => void saveShopUrl(photo, url)}
+                  onSave={(patch) => void savePhoto(photo, patch)}
                   onDelete={() => void removePhoto(photo)}
                 />
               ))}
@@ -303,6 +312,8 @@ export function AdminPage() {
   )
 }
 
+type PhotoEditPatch = Pick<Photo, 'title' | 'location' | 'alt' | 'story'> & { shopUrl: string }
+
 function AdminPhotoRow({
   photo,
   busy,
@@ -311,14 +322,29 @@ function AdminPhotoRow({
 }: {
   photo: Photo
   busy: boolean
-  onSave: (url: string) => void
+  onSave: (patch: PhotoEditPatch) => void
   onDelete: () => void
 }) {
-  const [url, setUrl] = useState(photo.shopUrl ?? '')
+  const [title, setTitle] = useState(photo.title)
+  const [location, setLocation] = useState(photo.location)
+  const [alt, setAlt] = useState(photo.alt)
+  const [story, setStory] = useState(photo.story)
+  const [shopUrl, setShopUrl] = useState(photo.shopUrl ?? '')
 
   useEffect(() => {
-    setUrl(photo.shopUrl ?? '')
-  }, [photo.shopUrl])
+    setTitle(photo.title)
+    setLocation(photo.location)
+    setAlt(photo.alt)
+    setStory(photo.story)
+    setShopUrl(photo.shopUrl ?? '')
+  }, [photo])
+
+  const dirty =
+    title !== photo.title ||
+    location !== photo.location ||
+    alt !== photo.alt ||
+    story !== photo.story ||
+    shopUrl !== (photo.shopUrl ?? '')
 
   return (
     <li className="admin-photo-row">
@@ -326,28 +352,45 @@ function AdminPhotoRow({
       <div className="admin-photo-row__body">
         <div className="admin-photo-row__meta">
           <strong>{photo.title}</strong>
-          <span>{photo.location}</span>
           <Link to={photoPath(photo.id)} className="text-link">
             View page
           </Link>
         </div>
-        <label>
-          Shop link
-          <input
-            type="url"
-            value={url}
-            onChange={(e) => setUrl(e.target.value)}
-            placeholder={site.shopUrl}
-          />
-        </label>
+        <div className="admin-grid">
+          <label>
+            Title
+            <input value={title} onChange={(e) => setTitle(e.target.value)} required />
+          </label>
+          <label>
+            Location
+            <input value={location} onChange={(e) => setLocation(e.target.value)} required />
+          </label>
+          <label className="admin-span-2">
+            Alt text
+            <input value={alt} onChange={(e) => setAlt(e.target.value)} required />
+          </label>
+          <label className="admin-span-2">
+            Story
+            <textarea value={story} onChange={(e) => setStory(e.target.value)} rows={3} required />
+          </label>
+          <label className="admin-span-2">
+            Shop / collection link
+            <input
+              type="url"
+              value={shopUrl}
+              onChange={(e) => setShopUrl(e.target.value)}
+              placeholder={site.shopUrl}
+            />
+          </label>
+        </div>
         <div className="admin-photo-row__actions">
           <button
             type="button"
             className="btn btn--accent"
-            disabled={busy || url === (photo.shopUrl ?? '')}
-            onClick={() => onSave(url)}
+            disabled={busy || !dirty || !title.trim() || !location.trim() || !alt.trim() || !story.trim()}
+            onClick={() => onSave({ title, location, alt, story, shopUrl })}
           >
-            Save link
+            Save changes
           </button>
           {photo.imageUrl ? (
             <button type="button" className="text-link" disabled={busy} onClick={onDelete}>
