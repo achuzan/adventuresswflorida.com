@@ -5,9 +5,6 @@ import { PhotoFrame } from '../components/PhotoFrame'
 import { pageMeta, SeoHead } from '../seo'
 import { site } from '../site'
 
-/** Visual rhythm for the mosaic — pattern repeats as the gallery grows */
-const tileSizes = ['hero', 'tall', 'wide', 'std', 'tall', 'std', 'wide', 'std', 'tall', 'std', 'wide', 'std'] as const
-
 export function GalleryPage() {
   const { photos } = usePhotos()
 
@@ -25,23 +22,20 @@ export function GalleryPage() {
       </header>
 
       <div className="gallery-mosaic">
-        {photos.map((photo, i) => {
-          const size = tileSizes[i % tileSizes.length]
-          return (
-            <Link
-              key={photo.id}
-              to={photoPath(photo.id)}
-              className={`gallery-tile gallery-tile--${size}`}
-              style={{ animationDelay: `${Math.min(i, 10) * 0.06}s` }}
-            >
-              <PhotoFrame photo={photo} sizes="(max-width: 720px) 100vw, 50vw" />
-              <span className="gallery-tile__caption">
-                <strong>{photo.title}</strong>
-                <span>{photo.location}</span>
-              </span>
-            </Link>
-          )
-        })}
+        {photos.map((photo, i) => (
+          <Link
+            key={photo.id}
+            to={photoPath(photo.id)}
+            className="gallery-tile"
+            style={{ animationDelay: `${Math.min(i, 10) * 0.06}s` }}
+          >
+            <PhotoFrame photo={photo} sizes="(max-width: 720px) 50vw, 33vw" />
+            <span className="gallery-tile__caption">
+              <strong>{photo.title}</strong>
+              <span>{photo.location}</span>
+            </span>
+          </Link>
+        ))}
       </div>
 
       <p className="gallery-note">
