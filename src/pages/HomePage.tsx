@@ -1,14 +1,16 @@
 import { Link } from 'react-router-dom'
-import { featuredPhotoIds, photoPath, photos } from '../data/photos'
+import { featuredPhotoIds, photoPath } from '../data/photos'
+import { usePhotos } from '../data/PhotosProvider'
 import { PhotoFrame } from '../components/PhotoFrame'
 import { homeJsonLd, JsonLd, pageMeta, SeoHead } from '../seo'
 import { site } from '../site'
 
 export function HomePage() {
+  const { photos } = usePhotos()
   const featured = featuredPhotoIds
     .map((id) => photos.find((p) => p.id === id))
     .filter((p): p is (typeof photos)[number] => Boolean(p))
-  const hero = photos.find((p) => p.id === 'alligator') ?? photos[0]
+  const hero = photos.find((p) => p.id === 'alligator') ?? photos[0]!
   const shopBand = photos.find((p) => p.id === 'scrub-jay') ?? photos[1] ?? hero
 
   return (

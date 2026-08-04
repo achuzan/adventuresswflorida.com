@@ -1,4 +1,5 @@
-import { BrowserRouter, Routes, Route } from 'react-router-dom'
+import { BrowserRouter, Routes, Route, useLocation } from 'react-router-dom'
+import { useEffect } from 'react'
 import { Header } from './components/Header'
 import { Footer } from './components/Footer'
 import { HomePage } from './pages/HomePage'
@@ -6,9 +7,9 @@ import { GalleryPage } from './pages/GalleryPage'
 import { PhotoPage } from './pages/PhotoPage'
 import { AboutPage } from './pages/AboutPage'
 import { ContactPage } from './pages/ContactPage'
+import { AdminPage } from './pages/AdminPage'
 import { NotFoundPage } from './pages/NotFoundPage'
-import { useEffect } from 'react'
-import { useLocation } from 'react-router-dom'
+import { PhotosProvider } from './data/PhotosProvider'
 
 function ScrollToTop() {
   const { pathname } = useLocation()
@@ -18,24 +19,36 @@ function ScrollToTop() {
   return null
 }
 
+function Shell() {
+  const { pathname } = useLocation()
+  const isAdmin = pathname.startsWith('/admin')
+
+  return (
+    <div className={`app-shell${isAdmin ? ' app-shell--admin' : ''}`}>
+      {!isAdmin && <Header />}
+      <main>
+        <Routes>
+          <Route path="/" element={<HomePage />} />
+          <Route path="/gallery" element={<GalleryPage />} />
+          <Route path="/gallery/:photoId" element={<PhotoPage />} />
+          <Route path="/about" element={<AboutPage />} />
+          <Route path="/contact" element={<ContactPage />} />
+          <Route path="/admin" element={<AdminPage />} />
+          <Route path="*" element={<NotFoundPage />} />
+        </Routes>
+      </main>
+      {!isAdmin && <Footer />}
+    </div>
+  )
+}
+
 export default function App() {
   return (
     <BrowserRouter>
-      <ScrollToTop />
-      <div className="app-shell">
-        <Header />
-        <main>
-          <Routes>
-            <Route path="/" element={<HomePage />} />
-            <Route path="/gallery" element={<GalleryPage />} />
-            <Route path="/gallery/:photoId" element={<PhotoPage />} />
-            <Route path="/about" element={<AboutPage />} />
-            <Route path="/contact" element={<ContactPage />} />
-            <Route path="*" element={<NotFoundPage />} />
-          </Routes>
-        </main>
-        <Footer />
-      </div>
+      <PhotosProvider>
+        <ScrollToTop />
+        <Shell />
+      </PhotosProvider>
     </BrowserRouter>
   )
 }

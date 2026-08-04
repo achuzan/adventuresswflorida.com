@@ -1,21 +1,32 @@
 import { Link, useParams } from 'react-router-dom'
 import { PhotoFrame } from '../components/PhotoFrame'
-import { getPhotoById, photoPath, photos } from '../data/photos'
+import { usePhoto, usePhotos } from '../data/PhotosProvider'
+import { photoPath } from '../data/photos'
 import { JsonLd, photoJsonLd, photoPageMeta, SeoHead } from '../seo'
 import { site } from '../site'
 import { NotFoundPage } from './NotFoundPage'
 
 export function PhotoPage() {
   const { photoId = '' } = useParams()
-  const photo = getPhotoById(photoId)
+  const { photos } = usePhotos()
+  const { photo, loading } = usePhoto(photoId)
 
-  if (!photo) {
+  if (!photo && !loading) {
     return <NotFoundPage />
   }
 
+  if (!photo) {
+    return (
+      <div className="page page--photo">
+        <p className="admin-status">Loading photograph…</p>
+      </div>
+    )
+  }
+
   const index = photos.findIndex((p) => p.id === photo.id)
-  const prev = photos[(index - 1 + photos.length) % photos.length]
-  const next = photos[(index + 1) % photos.length]
+  const prev = photos[(index - 1 + photos.length) % photos.length]!
+  const next = photos[(index + 1) % photos.length]!
+  const shopHref = photo.shopUrl || site.shopUrl
 
   return (
     <div className="page page--photo">
@@ -41,7 +52,7 @@ export function PhotoPage() {
             Wildlife photography by {site.photographer}. Part of {site.brand}.
           </p>
           <div className="photo-page__actions">
-            <a className="btn btn--accent" href={site.shopUrl}>
+            <a className="btn btn--accent" href={shopHref}>
               Shop Prints
             </a>
             <Link className="text-link" to="/gallery">

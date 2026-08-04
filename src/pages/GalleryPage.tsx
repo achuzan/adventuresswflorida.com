@@ -1,5 +1,6 @@
 import { Link } from 'react-router-dom'
-import { photoPath, photos } from '../data/photos'
+import { photoPath } from '../data/photos'
+import { usePhotos } from '../data/PhotosProvider'
 import { PhotoFrame } from '../components/PhotoFrame'
 import { pageMeta, SeoHead } from '../seo'
 import { site } from '../site'
@@ -8,6 +9,8 @@ import { site } from '../site'
 const tileSizes = ['hero', 'tall', 'wide', 'std', 'tall', 'std', 'wide', 'std', 'tall', 'std', 'wide', 'std'] as const
 
 export function GalleryPage() {
+  const { photos } = usePhotos()
+
   return (
     <div className="page page--gallery">
       <SeoHead {...pageMeta.gallery} />

@@ -36,4 +36,10 @@ function prerenderSeo(): Plugin {
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [react(), prerenderSeo()],
+  server: {
+    proxy: {
+      '/api': 'http://127.0.0.1:8787',
+      '/media': 'http://127.0.0.1:8787',
+    },
+  },
 })

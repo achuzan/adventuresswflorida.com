@@ -6,40 +6,57 @@ Wildlife photography portfolio for **Brad Kemp**, with prints sold separately at
 
 - Vite + React + TypeScript
 - React Router
-- Ready for Cloudflare Pages (includes `public/_redirects` for SPA routing)
+- Cloudflare Worker (static assets + `/api` + KV-backed media uploads)
 
 ## Develop
 
 ```bash
 npm install
-npm run dev
+cp .dev.vars.example .dev.vars   # set ADMIN_PASSWORD
+npm run dev                      # site UI (Vite)
 ```
 
-## Add your photos
-
-1. Export web-optimized images (JPG/WebP, long edge ~1600–2400px)
-2. Drop them into `public/photos/` using the filenames in `public/photos/README.md`
-3. Placeholders clear themselves once files are found
-
-Edit titles/locations in `src/data/photos.ts`. Site copy and links live in `src/site.ts`.
-
-## Build
+In a second terminal (needed for admin uploads / API):
 
 ```bash
 npm run build
-npm run preview
+npm run dev:worker
 ```
 
-## Deploy (Cloudflare)
+Or serve the built site + Worker together:
 
-This project deploys as a Worker with static assets (SPA mode in `wrangler.toml`).
+```bash
+npm run dev:full
+```
 
-1. Push to GitHub — Cloudflare rebuilds automatically
-2. Or deploy manually:
+Open `/admin` and sign in with `ADMIN_PASSWORD` from `.dev.vars`.
+
+## Admin gallery
+
+Password-protected page at `/admin` (not linked in the public nav):
+
+- Upload a new photo (JPG / PNG / WebP, up to 12 MB)
+- Attach a shop / collection URL for that image
+- Edit shop links on existing gallery photos
+
+Uploads and the gallery catalog are stored in Workers KV. Each photo page’s **Shop Prints** button uses that photo’s link when set, otherwise the main shop URL.
+
+### Production secrets
+
+```bash
+npx wrangler secret put ADMIN_PASSWORD
+npx wrangler secret put SESSION_SECRET
+```
+
+## Seed photos (shipped with the build)
+
+Existing frames still live in `public/photos/` with metadata in `src/shared/seed-photos.ts`. Site copy and social links live in `src/site.ts`.
+
+## Build & deploy
 
 ```bash
 npm run build
-npx wrangler deploy
+npm run deploy
 ```
 
 Attach `adventuresswflorida.com` as a custom domain in Workers & Pages. Keep `shop.` on Printify.

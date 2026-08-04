@@ -1,0 +1,22 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "adventuresswfloridacom",
+  "main": "./worker/index.ts",
+  "compatibility_date": "2026-07-15",
+  "assets": {
+    "directory": "./dist",
+    "not_found_handling": "single-page-application",
+    "binding": "ASSETS",
+    "run_worker_first": ["/api/*", "/media/*"]
+  },
+  "kv_namespaces": [
+    {
+      "binding": "PHOTOS_KV",
+      "id": "81d91a83f02f417691171b6c8863deba",
+      "preview_id": "0254605e93254a5994c82d0004cb2685"
+    }
+  ],
+  "observability": {
+    "enabled": true
+  }
+}

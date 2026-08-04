@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import type { Photo } from '../data/photos'
+import { photoImageSrc, type Photo } from '../data/photos'
 
 type Props = {
   photo: Photo
@@ -9,7 +9,7 @@ type Props = {
 }
 
 export function PhotoFrame({ photo, className = '', sizes, priority }: Props) {
-  const src = `/photos/${photo.file}`
+  const src = photoImageSrc(photo)
   const [status, setStatus] = useState<'loading' | 'ready' | 'missing'>('loading')
 
   useEffect(() => {

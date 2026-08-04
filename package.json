@@ -5,9 +5,13 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:worker": "wrangler dev --port 8787",
+    "dev:full": "npm run build && wrangler dev",
     "build": "tsc -b && vite build",
     "lint": "oxlint",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "deploy": "npm run build && wrangler deploy",
+    "cf:types": "wrangler types"
   },
   "dependencies": {
     "react": "^19.2.7",
@@ -15,6 +19,7 @@
     "react-router-dom": "^7.18.1"
   },
   "devDependencies": {
+    "@cloudflare/workers-types": "^5.20260730.1",
     "@types/node": "^24.13.2",
     "@types/react": "^19.2.17",
     "@types/react-dom": "^19.2.3",
@@ -22,6 +27,7 @@
     "oxlint": "^1.71.0",
     "sharp": "^0.35.3",
     "typescript": "~6.0.2",
-    "vite": "^8.1.1"
+    "vite": "^8.1.1",
+    "wrangler": "^4.28.0"
   }
 }

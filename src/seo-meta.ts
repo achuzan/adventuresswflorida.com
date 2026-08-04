@@ -4,7 +4,7 @@
  * DOM and React so it can run in Node during the build.
  */
 import { site } from './site.ts'
-import { featuredPhotoIds, photos, type Photo } from './data/photos.ts'
+import { featuredPhotoIds, photos, photoImageUrl, type Photo } from './data/photos.ts'
 
 export type PageMeta = {
   title: string
@@ -67,7 +67,7 @@ export function photoPageMeta(photo: Photo): PageMeta {
     title: `${photo.title} · ${photo.location} Wildlife Photography`,
     description,
     path: `/gallery/${photo.id}`,
-    image: `/photos/${photo.file}`,
+    image: photoImageUrl(photo),
     type: 'article',
   }
 }
@@ -142,7 +142,7 @@ export function homeJsonLd(): Record<string, unknown>[] {
       description: 'Wildlife photography from Southwest Florida preserves, parks, and shoreline.',
       associatedMedia: featured.map((photo) => ({
         '@type': 'ImageObject',
-        contentUrl: `${site.siteUrl}/photos/${photo.file}`,
+        contentUrl: `${site.siteUrl}${photoImageUrl(photo)}`,
         name: photo.title,
         description: photo.alt,
         contentLocation: photo.location,
@@ -159,7 +159,7 @@ export function photoJsonLd(photo: Photo): Record<string, unknown>[] {
       '@type': 'Photograph',
       name: photo.title,
       description: photo.story,
-      image: `${site.siteUrl}/photos/${photo.file}`,
+      image: `${site.siteUrl}${photoImageUrl(photo)}`,
       contentLocation: {
         '@type': 'Place',
         name: photo.location,
