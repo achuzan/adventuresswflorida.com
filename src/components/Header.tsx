@@ -76,7 +76,7 @@ export function Header() {
             </NavLink>
           ))}
           <a className="btn btn--accent site-nav__shop" href={site.shopUrl}>
-            Shop Prints
+            Shop Collection
           </a>
         </nav>
       </div>

@@ -39,7 +39,7 @@ Password-protected page at `/admin` (not linked in the public nav):
 - Attach a shop / collection URL for that image
 - Edit shop links on existing gallery photos
 
-Uploads and the gallery catalog are stored in Workers KV. Each photo page’s **Shop Prints** button uses that photo’s link when set, otherwise the main shop URL.
+Uploads and the gallery catalog are stored in Workers KV. Each photo page’s **Shop Collection** button uses that photo’s link when set, otherwise the main shop URL.
 
 ### Production secrets
 

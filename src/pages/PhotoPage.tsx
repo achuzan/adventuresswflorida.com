@@ -53,7 +53,7 @@ export function PhotoPage() {
           </p>
           <div className="photo-page__actions">
             <a className="btn btn--accent" href={shopHref}>
-              Shop Prints
+              Shop Collection
             </a>
             <Link className="text-link" to="/gallery">
               Back to Gallery
