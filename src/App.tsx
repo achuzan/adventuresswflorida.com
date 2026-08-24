@@ -8,6 +8,7 @@ import { PhotoPage } from './pages/PhotoPage'
 import { AboutPage } from './pages/AboutPage'
 import { ContactPage } from './pages/ContactPage'
 import { AdminPage } from './pages/AdminPage'
+import { CalendarPage } from './pages/CalendarPage'
 import { NotFoundPage } from './pages/NotFoundPage'
 import { PhotosProvider } from './data/PhotosProvider'
 
@@ -33,6 +34,7 @@ function Shell() {
           <Route path="/gallery/:photoId" element={<PhotoPage />} />
           <Route path="/about" element={<AboutPage />} />
           <Route path="/contact" element={<ContactPage />} />
+          <Route path="/calendar" element={<CalendarPage />} />
           <Route path="/admin" element={<AdminPage />} />
           <Route path="*" element={<NotFoundPage />} />
         </Routes>

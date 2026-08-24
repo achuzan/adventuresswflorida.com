@@ -4,6 +4,7 @@
  * DOM and React so it can run in Node during the build.
  */
 import { site } from './site.ts'
+import type { CalendarEntry } from './data/calendars.ts'
 import { featuredPhotoIds, photos, photoImageUrl, type Photo } from './data/photos.ts'
 
 export type PageMeta = {
@@ -58,7 +59,23 @@ export const pageMeta = {
     path: '/',
     noindex: true,
   },
+  calendar: {
+    title: `Calendar · ${site.shortBrand}`,
+    description: `Photographs and audio from the ${site.brand} calendar.`,
+    path: '/calendar',
+    noindex: true,
+  },
 } as const satisfies Record<string, PageMeta>
+
+export function calendarPageMeta(entry: CalendarEntry): PageMeta {
+  return {
+    title: `${entry.subject} · ${entry.label} ${entry.year} Calendar · ${site.shortBrand}`,
+    description: `${entry.subject} from the ${entry.year} ${site.brand} calendar — ${entry.label}.`,
+    path: `/calendar?year=${entry.year}&month=${entry.slot}`,
+    image: entry.photoSrc,
+    noindex: true,
+  }
+}
 
 export function photoPageMeta(photo: Photo): PageMeta {
   const description =
@@ -251,6 +268,7 @@ export function prerenderRoutes(): { file: string; head: string }[] {
     { file: 'gallery.html', meta: pageMeta.gallery },
     { file: 'about.html', meta: pageMeta.about },
     { file: 'contact.html', meta: pageMeta.contact },
+    { file: 'calendar.html', meta: pageMeta.calendar },
     ...photos.map((photo) => ({
       file: `gallery/${photo.id}.html`,
       meta: photoPageMeta(photo),

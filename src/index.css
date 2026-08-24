@@ -839,6 +839,133 @@ main {
   color: var(--orange-deep);
 }
 
+/* Calendar QR landing */
+.page--calendar {
+  max-width: calc(var(--max) + 4rem);
+}
+
+.calendar-page__layout {
+  display: grid;
+  gap: clamp(1.5rem, 4vw, 2.75rem);
+  align-items: start;
+}
+
+@media (min-width: 900px) {
+  .calendar-page__layout {
+    grid-template-columns: minmax(0, 1.35fr) minmax(16rem, 0.85fr);
+  }
+}
+
+.calendar-page__frame {
+  appearance: none;
+  position: relative;
+  display: block;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: var(--mangrove-deep);
+  cursor: pointer;
+  overflow: hidden;
+  box-shadow: 0 18px 50px rgba(18, 40, 36, 0.18);
+}
+
+.calendar-page__frame:focus-visible {
+  outline: 3px solid var(--orange);
+  outline-offset: 4px;
+}
+
+.calendar-page__frame img {
+  width: 100%;
+  height: auto;
+  max-height: min(72vh, 52rem);
+  object-fit: contain;
+  background: var(--mangrove-deep);
+}
+
+.calendar-page__frame--logo {
+  background: var(--foam);
+}
+
+.calendar-page__frame--logo img {
+  background: var(--foam);
+  padding: clamp(1.5rem, 5vw, 3rem);
+}
+
+.calendar-page__play {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: rgba(10, 28, 26, 0.28);
+  pointer-events: none;
+}
+
+.calendar-page__play-icon {
+  position: relative;
+  width: 4.25rem;
+  height: 4.25rem;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--orange) 92%, #fff);
+  box-shadow: 0 10px 30px rgba(10, 20, 18, 0.35);
+}
+
+.calendar-page__play-icon::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  margin: auto;
+  width: 0;
+  height: 0;
+  border-style: solid;
+  border-width: 0.7rem 0 0.7rem 1.15rem;
+  border-color: transparent transparent transparent #fff;
+  transform: translateX(0.18rem);
+}
+
+.calendar-page__copy h1 {
+  font-size: clamp(1.85rem, 4vw, 2.75rem);
+  margin-bottom: 0.75rem;
+}
+
+.calendar-page__lede {
+  font-size: 1.08rem;
+  color: color-mix(in srgb, var(--ink) 82%, transparent);
+}
+
+.calendar-page__audio {
+  display: grid;
+  gap: 0.45rem;
+  margin: 1.25rem 0 1rem;
+}
+
+.calendar-page__audio-label {
+  margin: 0;
+  font-size: 0.75rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--bark);
+  opacity: 0.7;
+}
+
+.calendar-page__audio audio {
+  width: 100%;
+  height: 3rem;
+}
+
+.calendar-page__credit {
+  font-size: 0.92rem;
+  color: color-mix(in srgb, var(--ink) 62%, transparent);
+}
+
+.calendar-page__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 1rem 1.35rem;
+  margin-top: 0.5rem;
+}
+
 /* Contact */
 .contact-list {
   display: grid;

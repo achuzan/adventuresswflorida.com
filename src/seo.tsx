@@ -2,7 +2,7 @@ import { useEffect } from 'react'
 import { site } from './site'
 import { absoluteUrl, type PageMeta } from './seo-meta'
 
-export { pageMeta, photoPageMeta, homeJsonLd, photoJsonLd } from './seo-meta'
+export { pageMeta, photoPageMeta, calendarPageMeta, homeJsonLd, photoJsonLd } from './seo-meta'
 export type { PageMeta } from './seo-meta'
 
 function setMeta(attr: 'name' | 'property', key: string, content: string) {
