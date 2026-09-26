@@ -75,6 +75,14 @@ export function Header() {
               {link.label}
             </NavLink>
           ))}
+          <a
+            href={site.birdingGuideUrl}
+            target="_blank"
+            rel="noreferrer"
+            onClick={() => setOpen(false)}
+          >
+            Free Birding Guide
+          </a>
           <a className="btn btn--accent site-nav__shop" href={site.shopUrl}>
             Shop Prints
           </a>

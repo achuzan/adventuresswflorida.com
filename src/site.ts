@@ -7,6 +7,7 @@ export const site = {
   baseLocation: 'Lehigh Acres, Florida',
   email: 'adventuresswflorida@gmail.com',
   shopUrl: 'https://shop.adventuresswflorida.com',
+  birdingGuideUrl: '/guides/SWFL-Birding-Hotspots-Guide.pdf',
   defaultOgImage: '/photos/alligator.jpg',
   socials: {
     instagram: 'https://www.instagram.com/adventuresswflorida/',
