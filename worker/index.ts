@@ -12,6 +12,8 @@ import {
   upsertPhoto,
 } from './catalog'
 import { randomWash, slugify, type Photo } from '../src/shared/photo'
+import { validateCalendarNav } from '../src/shared/site-settings'
+import { getSiteSettings, saveSiteSettings } from './settings'
 
 const MAX_UPLOAD_BYTES = 12 * 1024 * 1024
 const ALLOWED_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp'])
@@ -59,6 +61,32 @@ async function handleApi(request: Request, env: Env, path: string) {
   if (path === '/api/photos' && request.method === 'GET') {
     const photos = await getCatalog(env.PHOTOS_KV)
     return json({ photos })
+  }
+
+  if (path === '/api/settings' && request.method === 'GET') {
+    const settings = await getSiteSettings(env.PHOTOS_KV)
+    return json({ settings })
+  }
+
+  if (path === '/api/admin/settings' && request.method === 'PATCH') {
+    if (!(await requireAdmin(request, env))) return unauthorized()
+
+    let body: { calendarNav?: unknown }
+    try {
+      body = (await request.json()) as { calendarNav?: unknown }
+    } catch {
+      return badRequest('Invalid JSON body')
+    }
+
+    const validated = validateCalendarNav(body.calendarNav)
+    if (!validated.ok) return badRequest(validated.error)
+
+    const current = await getSiteSettings(env.PHOTOS_KV)
+    const settings = await saveSiteSettings(env.PHOTOS_KV, {
+      ...current,
+      calendarNav: validated.value,
+    })
+    return json({ settings })
   }
 
   if (path === '/api/admin/login' && request.method === 'POST') {

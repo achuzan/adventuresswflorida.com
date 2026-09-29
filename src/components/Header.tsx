@@ -1,5 +1,6 @@
 import { useEffect, useId, useState } from 'react'
 import { NavLink, Link, useLocation } from 'react-router-dom'
+import { useSiteSettings } from '../data/SiteSettingsProvider'
 import { site } from '../site'
 
 const links = [
@@ -11,6 +12,8 @@ const links = [
 
 export function Header() {
   const { pathname } = useLocation()
+  const { settings, loading } = useSiteSettings()
+  const calendarNav = settings.calendarNav
   const [open, setOpen] = useState(false)
   const [scrolled, setScrolled] = useState(false)
   const panelId = useId()
@@ -83,6 +86,11 @@ export function Header() {
           >
             Free Birding Guide
           </a>
+          {!loading && calendarNav.enabled && (
+            <a href={calendarNav.url} onClick={() => setOpen(false)}>
+              {calendarNav.label}
+            </a>
+          )}
           <a className="btn btn--accent site-nav__shop" href={site.shopUrl}>
             Shop Prints
           </a>

@@ -11,6 +11,7 @@ import { AdminPage } from './pages/AdminPage'
 import { CalendarPage } from './pages/CalendarPage'
 import { NotFoundPage } from './pages/NotFoundPage'
 import { PhotosProvider } from './data/PhotosProvider'
+import { SiteSettingsProvider } from './data/SiteSettingsProvider'
 
 function ScrollToTop() {
   const { pathname } = useLocation()
@@ -48,8 +49,10 @@ export default function App() {
   return (
     <BrowserRouter>
       <PhotosProvider>
-        <ScrollToTop />
-        <Shell />
+        <SiteSettingsProvider>
+          <ScrollToTop />
+          <Shell />
+        </SiteSettingsProvider>
       </PhotosProvider>
     </BrowserRouter>
   )

@@ -1184,7 +1184,7 @@ main {
   }
 }
 
-@media (max-width: 1100px) {
+@media (max-width: 1240px) {
   .nav-toggle {
     display: grid;
   }
@@ -1349,6 +1349,21 @@ main {
   margin-top: -0.25rem;
   color: var(--bark);
   font-size: 0.95rem;
+}
+
+.admin-card label.admin-check {
+  flex-direction: row;
+  align-items: center;
+  gap: 0.65rem;
+  margin: 0.35rem 0 1rem;
+}
+
+.admin-check input {
+  width: 1.05rem;
+  height: 1.05rem;
+  margin: 0;
+  padding: 0;
+  accent-color: var(--mangrove);
 }
 
 .admin-error {

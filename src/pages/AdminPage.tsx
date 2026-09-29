@@ -1,9 +1,11 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import { Link } from 'react-router-dom'
 import { usePhotos } from '../data/PhotosProvider'
+import { useSiteSettings } from '../data/SiteSettingsProvider'
 import { photoImageSrc, photoPath, type Photo } from '../data/photos'
 import { SeoHead } from '../seo'
 import { site } from '../site'
+import type { CalendarNav } from '../shared/site-settings'
 
 type SessionState = 'checking' | 'guest' | 'authed'
 
@@ -193,7 +195,9 @@ export function AdminPage() {
       <header className="page-hero admin-intro">
         <p className="eyebrow">Private</p>
         <h1>Gallery admin</h1>
-        <p>Add photos, edit existing ones, and attach a Printify / shop collection link for each.</p>
+        <p>
+          Add photos, edit existing ones, and control the calendar link in the site menu.
+        </p>
       </header>
 
       {session === 'checking' && <p className="admin-status">Checking session…</p>}
@@ -233,6 +237,18 @@ export function AdminPage() {
               {formError && <p className="admin-error">{formError}</p>}
             </div>
           )}
+
+          <CalendarNavCard
+            busy={busy}
+            onSaved={(label) => {
+              setFormError(null)
+              setNotice(`Updated the “${label}” menu link.`)
+            }}
+            onError={(message) => {
+              setNotice(null)
+              setFormError(message)
+            }}
+          />
 
           <form className="admin-card" onSubmit={onAddPhoto}>
             <h2>Add a photo</h2>
@@ -309,6 +325,107 @@ export function AdminPage() {
         </div>
       )}
     </div>
+  )
+}
+
+function CalendarNavCard({
+  busy,
+  onSaved,
+  onError,
+}: {
+  busy: boolean
+  onSaved: (label: string) => void
+  onError: (message: string) => void
+}) {
+  const { settings, refresh } = useSiteSettings()
+  const saved = settings.calendarNav
+  const [enabled, setEnabled] = useState(saved.enabled)
+  const [label, setLabel] = useState(saved.label)
+  const [url, setUrl] = useState(saved.url)
+  const [saving, setSaving] = useState(false)
+
+  useEffect(() => {
+    setEnabled(saved.enabled)
+    setLabel(saved.label)
+    setUrl(saved.url)
+  }, [saved])
+
+  const dirty =
+    enabled !== saved.enabled || label !== saved.label || url !== saved.url
+
+  async function onSubmit(e: FormEvent) {
+    e.preventDefault()
+    setSaving(true)
+    try {
+      const res = await fetch('/api/admin/settings', {
+        method: 'PATCH',
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          calendarNav: {
+            enabled,
+            label: label.trim(),
+            url: url.trim(),
+          } satisfies CalendarNav,
+        }),
+      })
+      const data = (await res.json().catch(() => null)) as { error?: string } | null
+      if (!res.ok) {
+        onError(data?.error ?? 'Could not update the menu link')
+        return
+      }
+      await refresh()
+      onSaved(label.trim())
+    } catch {
+      onError('Could not save the menu link. Is the Worker running?')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <form className="admin-card" onSubmit={(e) => void onSubmit(e)}>
+      <h2>Menu link</h2>
+      <p className="admin-hint">
+        Show, rename, or change the calendar link in the navigation menu and footer.
+      </p>
+      <label className="admin-check">
+        <input
+          type="checkbox"
+          checked={enabled}
+          onChange={(e) => setEnabled(e.target.checked)}
+        />
+        Show in the navigation menu
+      </label>
+      <div className="admin-grid">
+        <label>
+          Link name
+          <input
+            value={label}
+            onChange={(e) => setLabel(e.target.value)}
+            maxLength={80}
+            required
+          />
+        </label>
+        <label className="admin-span-2">
+          Link URL
+          <input
+            type="url"
+            value={url}
+            onChange={(e) => setUrl(e.target.value)}
+            placeholder="https://shop.adventuresswflorida.com/..."
+            required
+          />
+        </label>
+      </div>
+      <button
+        className="btn btn--accent"
+        type="submit"
+        disabled={busy || saving || !dirty || !label.trim() || !url.trim()}
+      >
+        {saving ? 'Saving…' : 'Save menu link'}
+      </button>
+    </form>
   )
 }
 

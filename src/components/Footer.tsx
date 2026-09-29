@@ -1,8 +1,11 @@
 import { Link } from 'react-router-dom'
+import { useSiteSettings } from '../data/SiteSettingsProvider'
 import { site } from '../site'
 
 export function Footer() {
   const year = new Date().getFullYear()
+  const { settings, loading } = useSiteSettings()
+  const calendarNav = settings.calendarNav
 
   return (
     <footer className="site-footer">
@@ -26,6 +29,11 @@ export function Footer() {
             <li>
               <Link to="/contact">Contact</Link>
             </li>
+            {!loading && calendarNav.enabled && (
+              <li>
+                <a href={calendarNav.url}>{calendarNav.label}</a>
+              </li>
+            )}
             <li>
               <a href={site.shopUrl}>
                 Print Shop
