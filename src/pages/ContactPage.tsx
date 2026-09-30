@@ -46,6 +46,12 @@ const contactLinks = [
     external: true,
   },
   {
+    label: 'Reddit',
+    value: 'u/AdventuresSWFlorida',
+    href: site.socials.reddit,
+    external: true,
+  },
+  {
     label: 'Blog',
     value: 'adventuresswflorida.blogspot.com',
     href: site.socials.blog,

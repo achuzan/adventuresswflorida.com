@@ -84,6 +84,11 @@ export function Footer() {
               </a>
             </li>
             <li>
+              <a href={site.socials.reddit} target="_blank" rel="noreferrer">
+                Reddit
+              </a>
+            </li>
+            <li>
               <a href={site.socials.blog} target="_blank" rel="noreferrer">
                 Blog
               </a>

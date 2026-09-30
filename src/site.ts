@@ -17,6 +17,7 @@ export const site = {
     pinterest: 'https://www.pinterest.com/adventuresswflorida',
     bluesky: 'https://bsky.app/profile/adventuresswfl.bsky.social',
     tiktok: 'https://www.tiktok.com/@adventuresswflori4',
+    reddit: 'https://www.reddit.com/user/AdventuresSWFlorida/',
     blog: 'https://adventuresswflorida.blogspot.com/',
     spotify: 'https://push.fm/fl/o3uoxgwh',
   },
