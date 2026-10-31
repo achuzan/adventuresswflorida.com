@@ -1,6 +1,6 @@
 # Adventures in Southwest Florida — Portfolio
 
-Wildlife photography portfolio for **Brad Kemp**, with prints sold separately at [shop.adventuresswflorida.com](https://shop.adventuresswflorida.com).
+Wildlife photography portfolio for **Brad Kemp**. Prints are still sold at [shop.adventuresswflorida.com](https://shop.adventuresswflorida.com) until the Gelato store at `/store` is turned on.
 
 ## Stack
 
@@ -46,7 +46,25 @@ Uploads and the gallery catalog are stored in Workers KV. Each photo page’s **
 ```bash
 npx wrangler secret put ADMIN_PASSWORD
 npx wrangler secret put SESSION_SECRET
+npx wrangler secret put GELATO_API_KEY
+npx wrangler secret put STRIPE_SECRET_KEY
+npx wrangler secret put STRIPE_PUBLISHABLE_KEY
+npx wrangler secret put STRIPE_WEBHOOK_SECRET
 ```
+
+`GELATO_STORE_ID` is optional. The store admin can hold the Gelato store id and template ids instead.
+
+## Store
+
+`/store` sells Gelato products (prints, calendars, mugs) without replacing the on-site calendar pages. Products stay hidden until they are switched on at `/admin`.
+
+Gelato’s API price is the print cost. Set a print markup and an optional shipping markup in admin. Checkout quotes live Gelato shipping, adds Stripe Tax, and takes the card in a Stripe Payment Element. Card numbers are not stored on this site. After `payment_intent.succeeded`, the Worker creates the Gelato order, which bills the card saved on the Gelato account.
+
+Stripe webhook endpoint: `https://adventuresswflorida.com/api/stripe/webhook`
+
+Events: `payment_intent.succeeded`, `payment_intent.payment_failed`.
+
+Until `STRIPE_WEBHOOK_SECRET` is set, a completed checkout still sends the Gelato order when the customer reaches the confirmation page. The webhook covers a closed tab. Admin can also sync an order.
 
 ## Seed photos (shipped with the build)
 

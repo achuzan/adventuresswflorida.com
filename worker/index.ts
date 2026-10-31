@@ -14,6 +14,7 @@ import {
 import { randomWash, slugify, type Photo } from '../src/shared/photo'
 import { validateCalendarNav } from '../src/shared/site-settings'
 import { getSiteSettings, saveSiteSettings } from './settings'
+import { handleStoreRequest } from './store-api'
 
 const MAX_UPLOAD_BYTES = 12 * 1024 * 1024
 const ALLOWED_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp'])
@@ -58,6 +59,14 @@ function mediaKvKey(objectKey: string) {
 }
 
 async function handleApi(request: Request, env: Env, path: string) {
+  if (
+    path.startsWith('/api/store') ||
+    path.startsWith('/api/admin/store') ||
+    path === '/api/stripe/webhook'
+  ) {
+    return handleStoreRequest(request, env)
+  }
+
   if (path === '/api/photos' && request.method === 'GET') {
     const photos = await getCatalog(env.PHOTOS_KV)
     return json({ photos })

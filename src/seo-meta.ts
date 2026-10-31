@@ -65,6 +65,13 @@ export const pageMeta = {
     path: '/calendar',
     noindex: true,
   },
+  store: {
+    title: `Store · Prints, Calendars & Mugs · ${site.shortBrand}`,
+    description:
+      'Order wildlife photography prints, calendars, and mugs from Adventures in Southwest Florida. Printed to order and shipped by Gelato.',
+    path: '/store',
+    image: site.defaultOgImage,
+  },
 } as const satisfies Record<string, PageMeta>
 
 export function calendarPageMeta(entry: CalendarEntry): PageMeta {
@@ -269,6 +276,7 @@ export function prerenderRoutes(): { file: string; head: string }[] {
     { file: 'about.html', meta: pageMeta.about },
     { file: 'contact.html', meta: pageMeta.contact },
     { file: 'calendar.html', meta: pageMeta.calendar },
+    { file: 'store.html', meta: pageMeta.store },
     ...photos.map((photo) => ({
       file: `gallery/${photo.id}.html`,
       meta: photoPageMeta(photo),

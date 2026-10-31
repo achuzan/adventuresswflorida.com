@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import { usePhotos } from '../data/PhotosProvider'
 import { useSiteSettings } from '../data/SiteSettingsProvider'
 import { photoImageSrc, photoPath, type Photo } from '../data/photos'
+import { AdminStorePanel } from '../components/AdminStorePanel'
 import { SeoHead } from '../seo'
 import { site } from '../site'
 import type { CalendarNav } from '../shared/site-settings'
@@ -196,7 +197,7 @@ export function AdminPage() {
         <p className="eyebrow">Private</p>
         <h1>Gallery admin</h1>
         <p>
-          Add photos, edit existing ones, and control the calendar link in the site menu.
+          Add photos, edit existing ones, control the calendar link, and turn Gelato products on in the store.
         </p>
       </header>
 
@@ -237,6 +238,8 @@ export function AdminPage() {
               {formError && <p className="admin-error">{formError}</p>}
             </div>
           )}
+
+          <AdminStorePanel />
 
           <CalendarNavCard
             busy={busy}

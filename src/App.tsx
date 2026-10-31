@@ -9,9 +9,15 @@ import { AboutPage } from './pages/AboutPage'
 import { ContactPage } from './pages/ContactPage'
 import { AdminPage } from './pages/AdminPage'
 import { CalendarPage } from './pages/CalendarPage'
+import { StorePage } from './pages/StorePage'
+import { StoreProductPage } from './pages/StoreProductPage'
+import { StoreCartPage } from './pages/StoreCartPage'
+import { StoreCheckoutPage } from './pages/StoreCheckoutPage'
+import { StoreOrderPage } from './pages/StoreOrderPage'
 import { NotFoundPage } from './pages/NotFoundPage'
 import { PhotosProvider } from './data/PhotosProvider'
 import { SiteSettingsProvider } from './data/SiteSettingsProvider'
+import { CartProvider } from './data/CartProvider'
 
 function ScrollToTop() {
   const { pathname } = useLocation()
@@ -36,6 +42,11 @@ function Shell() {
           <Route path="/about" element={<AboutPage />} />
           <Route path="/contact" element={<ContactPage />} />
           <Route path="/calendar" element={<CalendarPage />} />
+          <Route path="/store" element={<StorePage />} />
+          <Route path="/store/cart" element={<StoreCartPage />} />
+          <Route path="/store/checkout" element={<StoreCheckoutPage />} />
+          <Route path="/store/order/:orderId" element={<StoreOrderPage />} />
+          <Route path="/store/:productId" element={<StoreProductPage />} />
           <Route path="/admin" element={<AdminPage />} />
           <Route path="*" element={<NotFoundPage />} />
         </Routes>
@@ -50,8 +61,10 @@ export default function App() {
     <BrowserRouter>
       <PhotosProvider>
         <SiteSettingsProvider>
-          <ScrollToTop />
-          <Shell />
+          <CartProvider>
+            <ScrollToTop />
+            <Shell />
+          </CartProvider>
         </SiteSettingsProvider>
       </PhotosProvider>
     </BrowserRouter>

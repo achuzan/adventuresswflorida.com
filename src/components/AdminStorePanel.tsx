@@ -1,0 +1,363 @@
+import { useEffect, useState, type FormEvent } from 'react'
+import { Link } from 'react-router-dom'
+import { storeJson } from '../data/store-client'
+import { formatUsd } from '../shared/store'
+
+type AdminProduct = {
+  id: string
+  title: string
+  previewUrl: string
+  productType: string
+  status: string
+  source: 'store' | 'template'
+  enabled: boolean
+  sellable: boolean
+  variantCount: number
+  hasPrintFile: boolean
+  pricePending: boolean
+  wholesaleCents: number | null
+  retailCents: number | null
+}
+
+type AdminOrder = {
+  id: string
+  createdAt: string
+  status: string
+  email: string
+  totalCents: number
+  itemSummary: string
+  gelatoOrderIds: string[]
+  gelatoError: string
+  stripePaymentIntentId: string
+}
+
+type AdminStore = {
+  settings: {
+    markupPercent: number
+    shippingMarkupPercent: number
+    storeId: string
+    templateIds: string[]
+  }
+  notes: string[]
+  fetchedAt: string
+  secrets: {
+    gelato: boolean
+    stripeSecret: boolean
+    stripePublishable: boolean
+    stripeWebhook: boolean
+  }
+  products: AdminProduct[]
+  orders: AdminOrder[]
+}
+
+export function AdminStorePanel() {
+  const [data, setData] = useState<AdminStore | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const [notice, setNotice] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
+  const [markup, setMarkup] = useState('0')
+  const [shippingMarkup, setShippingMarkup] = useState('0')
+  const [storeId, setStoreId] = useState('')
+  const [templateIds, setTemplateIds] = useState('')
+
+  async function load(refresh = false, fillForm = false, mergePrices = false) {
+    const payload = refresh
+      ? await storeJson<AdminStore>('/api/admin/store/refresh', { method: 'POST', credentials: 'same-origin' })
+      : await storeJson<AdminStore>('/api/admin/store', { credentials: 'same-origin' })
+    setData((current) => {
+      if (!mergePrices || !current) return payload
+      const byId = new Map(payload.products.map((product) => [product.id, product]))
+      return {
+        ...current,
+        notes: payload.notes,
+        fetchedAt: payload.fetchedAt,
+        secrets: payload.secrets,
+        products: current.products.map((product) => {
+          const next = byId.get(product.id)
+          if (!next) return product
+          return {
+            ...product,
+            wholesaleCents: next.wholesaleCents,
+            retailCents: next.retailCents,
+            pricePending: next.pricePending,
+            hasPrintFile: next.hasPrintFile,
+            status: next.status,
+            sellable: next.sellable,
+          }
+        }),
+      }
+    })
+    if (fillForm) {
+      setMarkup(String(payload.settings.markupPercent))
+      setShippingMarkup(String(payload.settings.shippingMarkupPercent))
+      setStoreId(payload.settings.storeId)
+      setTemplateIds(payload.settings.templateIds.join('\n'))
+    }
+    return payload
+  }
+
+  useEffect(() => {
+    let cancelled = false
+    let timer = 0
+    let attempts = 0
+
+    async function run() {
+      try {
+        const payload = await load(false, attempts === 0, attempts > 0)
+        if (cancelled) return
+        if (payload.products.some((product) => product.pricePending) && attempts < 5) {
+          attempts += 1
+          timer = window.setTimeout(() => void run(), 900)
+        }
+      } catch (err) {
+        if (!cancelled) setError(err instanceof Error ? err.message : 'Could not load the store')
+      }
+    }
+
+    void run()
+    return () => {
+      cancelled = true
+      window.clearTimeout(timer)
+    }
+  }, [])
+
+  async function saveSettings(event: FormEvent) {
+    event.preventDefault()
+    setBusy(true)
+    setError(null)
+    setNotice(null)
+    try {
+      await loadSettings()
+      setNotice('Saved store settings. Refresh products if you changed the store or template ids.')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not save settings')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function loadSettings() {
+    const payload = await storeJson<AdminStore>('/api/admin/store/settings', {
+      method: 'PATCH',
+      credentials: 'same-origin',
+      body: JSON.stringify({
+        markupPercent: Number(markup),
+        shippingMarkupPercent: Number(shippingMarkup),
+        storeId,
+        templateIds,
+      }),
+    })
+    setData(payload)
+  }
+
+  async function toggle(product: AdminProduct) {
+    setError(null)
+    const enabled = !product.enabled
+    setData((current) =>
+      current
+        ? {
+            ...current,
+            products: current.products.map((item) => (item.id === product.id ? { ...item, enabled } : item)),
+          }
+        : current,
+    )
+    try {
+      await storeJson(`/api/admin/store/products/${encodeURIComponent(product.id)}`, {
+        method: 'PATCH',
+        credentials: 'same-origin',
+        body: JSON.stringify({ enabled }),
+      })
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not update that product')
+      try {
+        await load(false, false)
+      } catch {
+        /* keep the toggle error */
+      }
+    }
+  }
+
+  async function refresh() {
+    setBusy(true)
+    setError(null)
+    setNotice(null)
+    try {
+      await load(true)
+      setNotice('Reloaded products from Gelato.')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not refresh Gelato')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function sync(order: AdminOrder) {
+    setBusy(true)
+    setError(null)
+    try {
+      const payload = await storeJson<{ order: AdminOrder }>(
+        `/api/admin/store/orders/${encodeURIComponent(order.id)}/sync`,
+        { method: 'POST', credentials: 'same-origin' },
+      )
+      setData((current) =>
+        current
+          ? { ...current, orders: current.orders.map((item) => (item.id === payload.order.id ? payload.order : item)) }
+          : current,
+      )
+      setNotice(`Updated order ${payload.order.id}: ${payload.order.status.replaceAll('_', ' ')}`)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not sync that order')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <section className="admin-card">
+      <h2>Store</h2>
+      <p className="admin-hint">
+        Products come from Gelato and stay hidden until you turn them on. Gelato’s price is what Gelato
+        charges this account. Markup is added for the customer. Stripe takes the card payment and emails
+        a receipt. Gelato prints, ships, and emails tracking. This list is the place to see a payment
+        that has not reached Gelato yet.
+      </p>
+      <p className="admin-hint">
+        <Link to="/store">View the store</Link>
+      </p>
+      {!data && !error && <p className="admin-status">Loading store…</p>}
+      {error && <p className="admin-error">{error}</p>}
+      {notice && <p className="admin-notice">{notice}</p>}
+      {data && (
+        <>
+          <ul className="store-secrets">
+            <li>{data.secrets.gelato ? 'Gelato API key is set' : 'Missing GELATO_API_KEY'}</li>
+            <li>{data.secrets.stripeSecret ? 'Stripe secret key is set' : 'Missing STRIPE_SECRET_KEY'}</li>
+            <li>
+              {data.secrets.stripePublishable
+                ? 'Stripe publishable key is set'
+                : 'Missing STRIPE_PUBLISHABLE_KEY'}
+            </li>
+            <li>
+              {data.secrets.stripeWebhook
+                ? 'Stripe webhook secret is set'
+                : 'STRIPE_WEBHOOK_SECRET is not set yet. Payments can still complete from the order page. Add the webhook later at /api/stripe/webhook for payment_intent.succeeded and payment_intent.payment_failed.'}
+            </li>
+          </ul>
+          <form className="admin-grid" onSubmit={(event) => void saveSettings(event)}>
+            <label>
+              Print markup %
+              <input inputMode="decimal" value={markup} onChange={(event) => setMarkup(event.target.value)} />
+            </label>
+            <label>
+              Shipping markup %
+              <input
+                inputMode="decimal"
+                value={shippingMarkup}
+                onChange={(event) => setShippingMarkup(event.target.value)}
+              />
+            </label>
+            <label className="admin-span-2">
+              Gelato store id
+              <input
+                value={storeId}
+                onChange={(event) => setStoreId(event.target.value)}
+                placeholder="From the store URL in the Gelato dashboard"
+              />
+            </label>
+            <label className="admin-span-2">
+              Template ids
+              <textarea
+                rows={3}
+                value={templateIds}
+                onChange={(event) => setTemplateIds(event.target.value)}
+                placeholder="One Gelato template id per line, if products were saved as templates"
+              />
+            </label>
+            <div className="admin-span-2 store-actions">
+              <button className="btn btn--accent" type="submit" disabled={busy}>
+                Save settings
+              </button>
+              <button type="button" className="btn btn--ghost" disabled={busy} onClick={() => void refresh()}>
+                Refresh from Gelato
+              </button>
+            </div>
+          </form>
+          {data.notes.length > 0 && (
+            <ul className="admin-hint">
+              {data.notes.map((note) => (
+                <li key={note}>{note}</li>
+              ))}
+            </ul>
+          )}
+          <p className="admin-hint">Last product pull: {new Date(data.fetchedAt).toLocaleString()}</p>
+          {data.products.length === 0 ? (
+            <p>No Gelato products yet. Create them in Gelato, then refresh.</p>
+          ) : (
+            <ul className="admin-photo-list">
+              {data.products.map((product) => (
+                <li key={product.id} className="store-admin-product">
+                  {product.previewUrl ? (
+                    <img src={product.previewUrl} alt="" className="admin-photo-row__thumb" />
+                  ) : (
+                    <span className="admin-photo-row__thumb store-card__fallback" />
+                  )}
+                  <div>
+                    <strong>{product.title}</strong>
+                    <p className="admin-hint">
+                      {product.source} · {product.status || 'active'} · {product.variantCount} option
+                      {product.variantCount === 1 ? '' : 's'}
+                      {product.productType ? ` · ${product.productType}` : ''}
+                      {product.sellable ? '' : ' · not sellable until Gelato marks it active'}
+                    </p>
+                    <p>
+                      {product.pricePending && product.wholesaleCents == null
+                        ? 'Loading Gelato cost…'
+                        : product.wholesaleCents == null
+                          ? 'Gelato did not return a US price'
+                          : `Gelato cost ${formatUsd(product.wholesaleCents)} · customer ${formatUsd(product.retailCents ?? 0)}`}
+                    </p>
+                    {!product.hasPrintFile && (
+                      <p className="admin-hint">
+                        Gelato did not attach a print file. Orders are still sent, and Gelato rejects them if the
+                        design is not already stored on the product.
+                      </p>
+                    )}
+                    <label className="admin-check">
+                      <input
+                        type="checkbox"
+                        checked={product.enabled}
+                        onChange={() => void toggle(product)}
+                      />
+                      Show in the store
+                    </label>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+          <h3>Recent orders</h3>
+          {data.orders.length === 0 ? (
+            <p className="admin-hint">No orders yet.</p>
+          ) : (
+            <ul className="store-orders">
+              {data.orders.map((order) => (
+                <li key={order.id}>
+                  <strong>{order.status.replaceAll('_', ' ')}</strong>
+                  <span>{new Date(order.createdAt).toLocaleString()}</span>
+                  <span>{order.email}</span>
+                  <span>{formatUsd(order.totalCents)}</span>
+                  <span>{order.itemSummary}</span>
+                  {order.gelatoOrderIds.length > 0 && <span>Gelato {order.gelatoOrderIds.join(', ')}</span>}
+                  {order.gelatoError && <span className="admin-error">{order.gelatoError}</span>}
+                  <button type="button" className="text-link" disabled={busy} onClick={() => void sync(order)}>
+                    Sync payment and send to Gelato
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </>
+      )}
+    </section>
+  )
+}

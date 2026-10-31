@@ -1,5 +1,6 @@
 import { useEffect, useId, useState } from 'react'
 import { NavLink, Link, useLocation } from 'react-router-dom'
+import { useCart } from '../data/CartProvider'
 import { useSiteSettings } from '../data/SiteSettingsProvider'
 import { site } from '../site'
 
@@ -12,6 +13,7 @@ const links = [
 
 export function Header() {
   const { pathname } = useLocation()
+  const { count } = useCart()
   const { settings, loading } = useSiteSettings()
   const calendarNav = settings.calendarNav
   const [open, setOpen] = useState(false)
@@ -19,6 +21,13 @@ export function Header() {
   const panelId = useId()
   const overHero = pathname === '/'
   const solid = open || scrolled || !overHero
+  const storeNavActive =
+    pathname === '/store' ||
+    (pathname.startsWith('/store/') &&
+      !pathname.startsWith('/store/cart') &&
+      !pathname.startsWith('/store/checkout') &&
+      !pathname.startsWith('/store/order'))
+  const cartNavActive = pathname.startsWith('/store/cart')
 
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 24)
@@ -91,6 +100,22 @@ export function Header() {
               {calendarNav.label}
             </a>
           )}
+          <Link
+            to="/store"
+            className={storeNavActive ? 'is-active' : undefined}
+            aria-current={storeNavActive ? 'page' : undefined}
+            onClick={() => setOpen(false)}
+          >
+            Store
+          </Link>
+          <Link
+            to="/store/cart"
+            className={cartNavActive ? 'is-active' : undefined}
+            aria-current={cartNavActive ? 'page' : undefined}
+            onClick={() => setOpen(false)}
+          >
+            Cart{count > 0 ? ` (${count})` : ''}
+          </Link>
           <a className="btn btn--accent site-nav__shop" href={site.shopUrl}>
             Shop Prints
           </a>
