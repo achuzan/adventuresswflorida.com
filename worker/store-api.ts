@@ -1,4 +1,5 @@
 import { isAuthenticated } from './auth'
+import { testConnections } from './connection-tests'
 import {
   createGelatoOrder,
   findGelatoOrder,
@@ -19,19 +20,26 @@ import {
 import {
   clampPercent,
   ensurePrices,
+  couponPercent,
+  getCoupons,
   getOrder,
   getSettings,
   listOrders,
+  saveCoupons,
   readCatalog,
   saveOrder,
   saveSettings,
   writeCatalog,
   type OrderLeg,
+  type StoreCoupon,
   type StoreOrder,
   type StoreSettings,
 } from './store-data'
 import {
   deliveryLabel,
+  isCouponCode,
+  markupDiscountCents,
+  normalizeCouponCode,
   toCents,
   validateAddress,
   withMarkup,
@@ -288,7 +296,7 @@ function buildShippingOptions(quotes: GelatoQuoteGroup[], shippingMarkup: number
   return options
 }
 
-async function priceCart(env: Env, lines: IncomingLine[], address: ShippingAddress) {
+async function priceCart(env: Env, lines: IncomingLine[], address: ShippingAddress, coupon: StoreCoupon | null) {
   if (!env.GELATO_API_KEY) throw new HttpError(503, 'The store is not available right now')
   const settings = await getSettings(env.PHOTOS_KV)
   const catalog = await loadCatalog(env, false)
@@ -336,21 +344,44 @@ async function priceCart(env: Env, lines: IncomingLine[], address: ShippingAddre
     const wholesaleCents = wholesale.get(line.itemReferenceId)
     if (wholesaleCents == null) throw new HttpError(502, 'Gelato did not price one of the items')
     const retailCents = withMarkup(wholesaleCents, settings.markupPercent)
+    const discountCents = markupDiscountCents(wholesaleCents, retailCents, coupon?.percent ?? 0)
     return {
       ...line,
       pageCount: pages.get(line.itemReferenceId),
       wholesaleCents,
       retailCents,
+      discountCents,
       unitPriceCents: Math.max(0, Math.round(retailCents / line.quantity)),
     }
   })
 
+  const shipping = buildShippingOptions(quoted.quotes, settings.shippingMarkupPercent).map((option) => ({
+    ...option,
+    discountCents: markupDiscountCents(option.wholesaleCents, option.retailCents, coupon?.percent ?? 0),
+  }))
+
   return {
     settings,
+    coupon,
     lines: pricedLines,
-    shipping: buildShippingOptions(quoted.quotes, settings.shippingMarkupPercent),
+    shipping,
     subtotalCents: pricedLines.reduce((sum, line) => sum + line.retailCents, 0),
+    discountCents: pricedLines.reduce((sum, line) => sum + line.discountCents, 0),
   }
+}
+
+async function readCoupon(env: Env, body: unknown): Promise<StoreCoupon | null> {
+  const raw = body && typeof body === 'object' ? (body as { coupon?: unknown }).coupon : ''
+  const code = normalizeCouponCode(typeof raw === 'string' ? raw : '')
+  if (!code) return null
+  if (!isCouponCode(code)) throw new HttpError(400, 'That coupon code is not valid')
+  const coupon = (await getCoupons(env.PHOTOS_KV)).find((item) => item.code === code)
+  if (!coupon?.active) throw new HttpError(400, 'That coupon code is not valid')
+  return coupon
+}
+
+function couponPublic(coupon: StoreCoupon | null) {
+  return coupon ? { code: coupon.code, percent: coupon.percent } : null
 }
 
 function publicOrder(order: StoreOrder): PublicOrder {
@@ -378,6 +409,8 @@ function publicOrder(order: StoreOrder): PublicOrder {
     shippingLabel: order.shippingLabel,
     subtotalCents: order.subtotalCents,
     shippingCents: order.shippingRetailCents,
+    discountCents: order.discountCents ?? 0,
+    couponCode: order.couponCode ?? '',
     taxCents: order.taxCents,
     totalCents: order.totalCents,
     minDeliveryDays: order.minDeliveryDays,
@@ -553,6 +586,7 @@ async function adminPayload(env: Env, refresh: boolean) {
       ? catalog.notes
       : ['Set GELATO_API_KEY with wrangler secret put, then refresh.'],
     fetchedAt: catalog.fetchedAt,
+    coupons: await getCoupons(env.PHOTOS_KV),
     secrets: {
       gelato: Boolean(env.GELATO_API_KEY),
       stripeSecret: Boolean(env.STRIPE_SECRET_KEY),
@@ -616,6 +650,11 @@ export async function handleStoreRequest(request: Request, env: Env) {
     if (path === '/api/admin/store' && request.method === 'GET') return await adminGet(request, env, false)
     if (path === '/api/admin/store/refresh' && request.method === 'POST') return await adminGet(request, env, true)
     if (path === '/api/admin/store/settings' && request.method === 'PATCH') return await adminSettings(request, env)
+    if (path === '/api/admin/store/test' && request.method === 'POST') return await adminTest(request, env)
+    if (path === '/api/admin/store/coupons' && request.method === 'POST') return await adminCreateCoupon(request, env)
+    const couponMatch = /^\/api\/admin\/store\/coupons\/([A-Za-z0-9-]{3,24})$/.exec(path)
+    if (couponMatch && request.method === 'PATCH') return await adminUpdateCoupon(request, env, couponMatch[1]!)
+    if (couponMatch && request.method === 'DELETE') return await adminDeleteCoupon(request, env, couponMatch[1]!)
     const toggle = /^\/api\/admin\/store\/products\/([A-Za-z0-9_-]{8,80})$/.exec(path)
     if (toggle && request.method === 'PATCH') return await adminToggle(request, env, toggle[1]!)
     const sync = /^\/api\/admin\/store\/orders\/(ord_[A-Za-z0-9_-]{8,80})\/sync$/.exec(path)
@@ -671,7 +710,8 @@ async function quote(request: Request, env: Env) {
   const body = await readJson(request)
   const address = validateAddress((body as { address?: unknown }).address)
   if (!address.ok) throw new HttpError(400, address.error)
-  const priced = await priceCart(env, parseLines(body), address.address)
+  const coupon = await readCoupon(env, body)
+  const priced = await priceCart(env, parseLines(body), address.address, coupon)
   return json({
     lines: priced.lines.map((line) => ({
       productId: line.productId,
@@ -683,10 +723,13 @@ async function quote(request: Request, env: Env) {
       linePriceCents: line.retailCents,
     })),
     subtotalCents: priced.subtotalCents,
+    discountCents: priced.discountCents,
+    coupon: couponPublic(priced.coupon),
     shipping: priced.shipping.map((option) => ({
       id: option.id,
       label: option.label,
       priceCents: option.retailCents,
+      discountCents: option.discountCents,
       minDeliveryDays: option.minDeliveryDays,
       maxDeliveryDays: option.maxDeliveryDays,
     })),
@@ -698,24 +741,31 @@ async function checkout(request: Request, env: Env) {
   const address = validateAddress(body.address)
   if (!address.ok) throw new HttpError(400, address.error)
   const shippingOptionId = typeof body.shippingOptionId === 'string' ? body.shippingOptionId : ''
-  const priced = await priceCart(env, parseLines(body), address.address)
+  const coupon = await readCoupon(env, body)
+  const priced = await priceCart(env, parseLines(body), address.address, coupon)
   const option = priced.shipping.find((item) => item.id === shippingOptionId)
   if (!option) throw new HttpError(400, 'Choose a shipping method again')
   const key = publishableKey(env)
   if (!env.STRIPE_SECRET_KEY || !key) throw new HttpError(503, 'Card payments are not available right now')
+  const discountCents = priced.discountCents + option.discountCents
+  const chargedSubtotal = priced.subtotalCents - priced.discountCents
+  const chargedShipping = option.retailCents - option.discountCents
 
   let tax: { id: string; amountTotal: number; taxCents: number }
   try {
     tax = await createTaxCalculation(env.STRIPE_SECRET_KEY, {
       address: address.address,
-      lines: priced.lines.map((line) => ({ reference: line.itemReferenceId, amount: line.retailCents })),
-      shippingCents: option.retailCents,
+      lines: priced.lines.map((line) => ({
+        reference: line.itemReferenceId,
+        amount: line.retailCents - line.discountCents,
+      })),
+      shippingCents: chargedShipping,
     })
   } catch (error) {
     throw new HttpError(400, stripeMessage(error))
   }
   if (tax.amountTotal < 50) throw new HttpError(400, 'This order is below the minimum card payment')
-  const taxCents = Math.max(0, tax.amountTotal - priced.subtotalCents - option.retailCents)
+  const taxCents = Math.max(0, tax.amountTotal - chargedSubtotal - chargedShipping)
 
   const orderId = `ord_${crypto.randomUUID()}`
   let intent: { id: string; clientSecret: string }
@@ -760,6 +810,9 @@ async function checkout(request: Request, env: Env) {
     shippingLabel: option.label,
     shippingRetailCents: option.retailCents,
     shippingWholesaleCents: option.wholesaleCents,
+    discountCents,
+    couponCode: coupon?.code,
+    couponPercent: coupon?.percent,
     minDeliveryDays: option.minDeliveryDays,
     maxDeliveryDays: option.maxDeliveryDays,
     address: address.address,
@@ -777,6 +830,8 @@ async function checkout(request: Request, env: Env) {
     subtotalCents: priced.subtotalCents,
     shippingCents: option.retailCents,
     shippingLabel: option.label,
+    discountCents,
+    coupon: couponPublic(coupon),
     taxCents,
     totalCents: tax.amountTotal,
     minDeliveryDays: option.minDeliveryDays,
@@ -830,6 +885,13 @@ async function webhook(request: Request, env: Env) {
   return json({ received: true })
 }
 
+async function adminTest(request: Request, env: Env) {
+  await requireAdmin(request, env)
+  const settings = await getSettings(env.PHOTOS_KV)
+  const checks = await testConnections(env, settings, configuredStoreIds(env, settings))
+  return json({ checks })
+}
+
 async function adminGet(request: Request, env: Env, refresh: boolean) {
   await requireAdmin(request, env)
   return json(await adminPayload(env, refresh))
@@ -873,6 +935,39 @@ async function adminSettings(request: Request, env: Env) {
   }
   await saveSettings(env.PHOTOS_KV, settings)
   return json(await adminPayload(env, false))
+}
+
+async function adminCreateCoupon(request: Request, env: Env) {
+  await requireAdmin(request, env)
+  const body = (await readJson(request)) as { code?: unknown; percent?: unknown }
+  const code = normalizeCouponCode(typeof body.code === 'string' ? body.code : '')
+  if (!isCouponCode(code)) throw new HttpError(400, 'Use 3–24 letters, numbers, or hyphens')
+  const percent = couponPercent(body.percent)
+  if (percent == null) throw new HttpError(400, 'Discount must be a whole number from 1 to 100')
+  const coupons = await getCoupons(env.PHOTOS_KV)
+  if (coupons.some((coupon) => coupon.code === code)) throw new HttpError(400, 'That coupon code already exists')
+  if (coupons.length >= 40) throw new HttpError(400, 'Remove a coupon before adding another')
+  const next = await saveCoupons(env.PHOTOS_KV, [...coupons, { code, percent, active: true }])
+  return json({ coupons: next })
+}
+
+async function adminUpdateCoupon(request: Request, env: Env, rawCode: string) {
+  await requireAdmin(request, env)
+  const code = normalizeCouponCode(decodeURIComponent(rawCode))
+  const body = (await readJson(request)) as { active?: unknown }
+  const coupons = await getCoupons(env.PHOTOS_KV)
+  const coupon = coupons.find((item) => item.code === code)
+  if (!coupon) return json({ error: 'Coupon not found' }, 404)
+  coupon.active = Boolean(body.active)
+  return json({ coupons: await saveCoupons(env.PHOTOS_KV, coupons) })
+}
+
+async function adminDeleteCoupon(request: Request, env: Env, rawCode: string) {
+  await requireAdmin(request, env)
+  const code = normalizeCouponCode(decodeURIComponent(rawCode))
+  const coupons = await getCoupons(env.PHOTOS_KV)
+  if (!coupons.some((coupon) => coupon.code === code)) return json({ error: 'Coupon not found' }, 404)
+  return json({ coupons: await saveCoupons(env.PHOTOS_KV, coupons.filter((coupon) => coupon.code !== code)) })
 }
 
 async function adminToggle(request: Request, env: Env, id: string) {

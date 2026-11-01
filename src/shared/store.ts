@@ -33,6 +33,7 @@ export type ShippingOptionPublic = {
   id: string
   label: string
   priceCents: number
+  discountCents: number
   minDeliveryDays: number
   maxDeliveryDays: number
 }
@@ -50,6 +51,8 @@ export type QuoteLinePublic = {
 export type QuoteResponse = {
   lines: QuoteLinePublic[]
   subtotalCents: number
+  discountCents: number
+  coupon: { code: string; percent: number } | null
   shipping: ShippingOptionPublic[]
 }
 
@@ -60,6 +63,8 @@ export type CheckoutResponse = {
   subtotalCents: number
   shippingCents: number
   shippingLabel: string
+  discountCents: number
+  coupon: { code: string; percent: number } | null
   taxCents: number
   totalCents: number
   lines: QuoteLinePublic[]
@@ -76,6 +81,8 @@ export type PublicOrder = {
   shippingLabel: string
   subtotalCents: number
   shippingCents: number
+  discountCents: number
+  couponCode: string
   taxCents: number
   totalCents: number
   minDeliveryDays: number
@@ -200,6 +207,21 @@ export function toCents(major: number) {
 
 export function withMarkup(wholesaleCents: number, percent: number) {
   return Math.max(0, Math.round(wholesaleCents * (1 + percent / 100)))
+}
+
+export function normalizeCouponCode(value: string) {
+  return value.trim().toUpperCase().replace(/\s+/g, '')
+}
+
+export function isCouponCode(code: string) {
+  return /^[A-Z0-9][A-Z0-9-]{2,23}$/.test(code)
+}
+
+/** Amount of store markup removed. The result never exceeds the markup, so the price stays at or above Gelato’s cost. */
+export function markupDiscountCents(wholesaleCents: number, retailCents: number, percent: number) {
+  const markup = Math.max(0, retailCents - wholesaleCents)
+  const portion = Math.min(100, Math.max(0, percent))
+  return Math.min(markup, Math.round((markup * portion) / 100))
 }
 
 export function variantForSelection<T extends { options: StoreOption[] }>(

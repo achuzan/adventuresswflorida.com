@@ -119,6 +119,12 @@ export function StoreOrderPage() {
               <span>{order.shippingLabel}</span>
               <span>{formatUsd(order.shippingCents)}</span>
             </li>
+            {order.discountCents > 0 && (
+              <li>
+                <span>Coupon {order.couponCode}</span>
+                <span>{formatUsd(-order.discountCents)}</span>
+              </li>
+            )}
             <li>
               <span>Tax</span>
               <span>{formatUsd(order.taxCents)}</span>

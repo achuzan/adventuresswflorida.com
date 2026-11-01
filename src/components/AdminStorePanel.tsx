@@ -31,6 +31,19 @@ type AdminOrder = {
   stripePaymentIntentId: string
 }
 
+type ConnectionCheck = {
+  id: string
+  name: string
+  status: 'ok' | 'warn' | 'fail'
+  detail: string
+}
+
+type StoreCoupon = {
+  code: string
+  percent: number
+  active: boolean
+}
+
 type AdminStore = {
   settings: {
     markupPercent: number
@@ -40,6 +53,7 @@ type AdminStore = {
   }
   notes: string[]
   fetchedAt: string
+  coupons: StoreCoupon[]
   secrets: {
     gelato: boolean
     stripeSecret: boolean
@@ -59,6 +73,10 @@ export function AdminStorePanel() {
   const [shippingMarkup, setShippingMarkup] = useState('0')
   const [storeId, setStoreId] = useState('')
   const [templateIds, setTemplateIds] = useState('')
+  const [checks, setChecks] = useState<ConnectionCheck[] | null>(null)
+  const [testing, setTesting] = useState(false)
+  const [couponCode, setCouponCode] = useState('')
+  const [couponPercent, setCouponPercent] = useState('10')
 
   async function load(refresh = false, fillForm = false, mergePrices = false) {
     const payload = refresh
@@ -150,6 +168,72 @@ export function AdminStorePanel() {
     setData(payload)
   }
 
+  function setCoupons(coupons: StoreCoupon[]) {
+    setData((current) => (current ? { ...current, coupons } : current))
+  }
+
+  async function addCoupon(event: FormEvent) {
+    event.preventDefault()
+    setBusy(true)
+    setError(null)
+    setNotice(null)
+    try {
+      const payload = await storeJson<{ coupons: StoreCoupon[] }>('/api/admin/store/coupons', {
+        method: 'POST',
+        credentials: 'same-origin',
+        body: JSON.stringify({ code: couponCode, percent: Number(couponPercent) }),
+      })
+      setCoupons(payload.coupons)
+      setCouponCode('')
+      setNotice('Coupon added.')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not add that coupon')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function setCouponActive(coupon: StoreCoupon, active: boolean) {
+    setError(null)
+    setCoupons(
+      (data?.coupons ?? []).map((item) => (item.code === coupon.code ? { ...item, active } : item)),
+    )
+    try {
+      const payload = await storeJson<{ coupons: StoreCoupon[] }>(
+        `/api/admin/store/coupons/${encodeURIComponent(coupon.code)}`,
+        {
+          method: 'PATCH',
+          credentials: 'same-origin',
+          body: JSON.stringify({ active }),
+        },
+      )
+      setCoupons(payload.coupons)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not update that coupon')
+      try {
+        await load(false, false)
+      } catch {
+        /* keep the coupon error */
+      }
+    }
+  }
+
+  async function removeCoupon(coupon: StoreCoupon) {
+    setBusy(true)
+    setError(null)
+    try {
+      const payload = await storeJson<{ coupons: StoreCoupon[] }>(
+        `/api/admin/store/coupons/${encodeURIComponent(coupon.code)}`,
+        { method: 'DELETE', credentials: 'same-origin' },
+      )
+      setCoupons(payload.coupons)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not remove that coupon')
+    } finally {
+      setBusy(false)
+    }
+  }
+
   async function toggle(product: AdminProduct) {
     setError(null)
     const enabled = !product.enabled
@@ -174,6 +258,22 @@ export function AdminStorePanel() {
       } catch {
         /* keep the toggle error */
       }
+    }
+  }
+
+  async function testConnections() {
+    setTesting(true)
+    setError(null)
+    try {
+      const payload = await storeJson<{ checks: ConnectionCheck[] }>('/api/admin/store/test', {
+        method: 'POST',
+        credentials: 'same-origin',
+      })
+      setChecks(payload.checks)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not test the connections')
+    } finally {
+      setTesting(false)
     }
   }
 
@@ -243,6 +343,20 @@ export function AdminStorePanel() {
                 : 'STRIPE_WEBHOOK_SECRET is not set yet. Payments can still complete from the order page. Add the webhook later at /api/stripe/webhook for payment_intent.succeeded and payment_intent.payment_failed.'}
             </li>
           </ul>
+          <div className="store-actions">
+            <button type="button" className="btn btn--ghost" disabled={testing} onClick={() => void testConnections()}>
+              {testing ? 'Testing connections…' : 'Test connections'}
+            </button>
+          </div>
+          {checks && (
+            <ul className="store-checks">
+              {checks.map((item) => (
+                <li key={item.id} className={`is-${item.status}`}>
+                  <strong>{item.name}.</strong> {item.detail}
+                </li>
+              ))}
+            </ul>
+          )}
           <form className="admin-grid" onSubmit={(event) => void saveSettings(event)}>
             <label>
               Print markup %
@@ -282,6 +396,62 @@ export function AdminStorePanel() {
               </button>
             </div>
           </form>
+          <form className="admin-grid" onSubmit={(event) => void addCoupon(event)}>
+            <h2 className="admin-span-2">Coupons</h2>
+            <p className="admin-hint admin-span-2">
+              A coupon removes a percent of the print and shipping markup. Gelato’s cost is never discounted.
+              100% means the customer pays Gelato’s price.
+            </p>
+            <label>
+              Code
+              <input
+                value={couponCode}
+                onChange={(event) => setCouponCode(event.target.value)}
+                placeholder="SPRING"
+                maxLength={24}
+                required
+              />
+            </label>
+            <label>
+              Percent of markup
+              <input
+                inputMode="numeric"
+                value={couponPercent}
+                onChange={(event) => setCouponPercent(event.target.value)}
+                min={1}
+                max={100}
+                required
+              />
+            </label>
+            <div className="admin-span-2">
+              <button className="btn btn--accent" type="submit" disabled={busy}>
+                Add coupon
+              </button>
+            </div>
+          </form>
+          {(data.coupons ?? []).length === 0 ? (
+            <p className="admin-hint">No coupon codes yet.</p>
+          ) : (
+            <ul className="store-orders">
+              {(data.coupons ?? []).map((coupon) => (
+                <li key={coupon.code}>
+                  <strong>{coupon.code}</strong>
+                  <span>{coupon.percent}% off the markup</span>
+                  <label className="admin-check">
+                    <input
+                      type="checkbox"
+                      checked={coupon.active}
+                      onChange={() => void setCouponActive(coupon, !coupon.active)}
+                    />
+                    Active
+                  </label>
+                  <button type="button" className="text-link" disabled={busy} onClick={() => void removeCoupon(coupon)}>
+                    Remove
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
           {data.notes.length > 0 && (
             <ul className="admin-hint">
               {data.notes.map((note) => (

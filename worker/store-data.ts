@@ -1,13 +1,20 @@
-import type { ShippingAddress } from '../src/shared/store'
+import { isCouponCode, type ShippingAddress } from '../src/shared/store'
 import type { InternalProduct, PrintFile } from './gelato'
 import { fetchUnitWholesaleCents, mapPool } from './gelato'
 
 const SETTINGS_KEY = 'store:settings'
+const COUPONS_KEY = 'store:coupons'
 const CATALOG_KEY = 'store:catalog'
 const PRICE_KEY = 'store:prices'
 const ORDER_INDEX = 'store:order-index'
 const PRICE_TTL_MS = 12 * 60 * 60 * 1000
 const PRICE_MISS_TTL_MS = 10 * 60 * 1000
+
+export type StoreCoupon = {
+  code: string
+  percent: number
+  active: boolean
+}
 
 export type StoreSettings = {
   markupPercent: number
@@ -58,6 +65,9 @@ export type StoreOrder = {
   shippingLabel: string
   shippingRetailCents: number
   shippingWholesaleCents: number
+  discountCents?: number
+  couponCode?: string
+  couponPercent?: number
   minDeliveryDays: number
   maxDeliveryDays: number
   address: ShippingAddress
@@ -120,6 +130,38 @@ export async function getSettings(kv: KVNamespace): Promise<StoreSettings> {
 export async function saveSettings(kv: KVNamespace, settings: StoreSettings) {
   await kv.put(SETTINGS_KEY, JSON.stringify(settings))
   return settings
+}
+
+export function couponPercent(value: unknown) {
+  const parsed = typeof value === 'number' ? value : typeof value === 'string' ? Number(value) : NaN
+  if (!Number.isInteger(parsed) || parsed < 1 || parsed > 100) return null
+  return parsed
+}
+
+export async function getCoupons(kv: KVNamespace): Promise<StoreCoupon[]> {
+  const raw = await kv.get(COUPONS_KEY)
+  if (!raw) return []
+  try {
+    const parsed = JSON.parse(raw) as unknown
+    if (!Array.isArray(parsed)) return []
+    const coupons: StoreCoupon[] = []
+    for (const row of parsed) {
+      if (!row || typeof row !== 'object') continue
+      const item = row as Partial<StoreCoupon>
+      const code = typeof item.code === 'string' ? item.code : ''
+      const percent = couponPercent(item.percent)
+      if (!isCouponCode(code) || percent == null) continue
+      coupons.push({ code, percent, active: item.active !== false })
+    }
+    return coupons.slice(0, 40)
+  } catch {
+    return []
+  }
+}
+
+export async function saveCoupons(kv: KVNamespace, coupons: StoreCoupon[]) {
+  await kv.put(COUPONS_KEY, JSON.stringify(coupons.slice(0, 40)))
+  return coupons.slice(0, 40)
 }
 
 export async function readCatalog(kv: KVNamespace): Promise<CatalogCache | null> {

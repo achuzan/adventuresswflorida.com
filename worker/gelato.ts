@@ -134,6 +134,8 @@ async function gelato<T>(apiKey: string, url: string, init?: RequestInit): Promi
   return data as T
 }
 
+export { gelato as gelatoRequest }
+
 function httpsUrl(value: unknown) {
   const url = str(value)
   return url.startsWith('https://') ? url : ''

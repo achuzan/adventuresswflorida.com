@@ -64,6 +64,7 @@ export function StoreCheckoutPage() {
   const [address, setAddress] = useState<ShippingAddress>(emptyAddress)
   const [quote, setQuote] = useState<QuoteResponse | null>(null)
   const [shippingOptionId, setShippingOptionId] = useState('')
+  const [coupon, setCoupon] = useState('')
   const [payment, setPayment] = useState<CheckoutResponse | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
@@ -87,7 +88,7 @@ export function StoreCheckoutPage() {
     try {
       const data = await storeJson<QuoteResponse>('/api/store/quote', {
         method: 'POST',
-        body: JSON.stringify({ lines: cartLines(items), address: checked.address }),
+        body: JSON.stringify({ lines: cartLines(items), address: checked.address, coupon }),
       })
       setAddress(checked.address)
       setQuote(data)
@@ -114,6 +115,7 @@ export function StoreCheckoutPage() {
           lines: cartLines(items),
           address,
           shippingOptionId,
+          coupon,
         }),
       })
       setPayment(data)
@@ -214,6 +216,21 @@ export function StoreCheckoutPage() {
             </label>
           </div>
 
+          <label>
+            Coupon code (optional)
+            <input
+              value={coupon}
+              autoComplete="off"
+              maxLength={24}
+              onChange={(event) => {
+                setCoupon(event.target.value)
+                setQuote(null)
+                setPayment(null)
+                setShippingOptionId('')
+              }}
+            />
+          </label>
+
           {quote && (
             <fieldset className="store-shipping">
               <legend>Shipping</legend>
@@ -247,6 +264,19 @@ export function StoreCheckoutPage() {
                   <span>Prints</span>
                   <span>{formatUsd(quote.subtotalCents)}</span>
                 </li>
+                {quote.coupon && (
+                  <li>
+                    <span>
+                      Coupon {quote.coupon.code} ({quote.coupon.percent}% of the markup)
+                    </span>
+                    <span>
+                      {formatUsd(
+                        -(quote.discountCents +
+                          (quote.shipping.find((option) => option.id === shippingOptionId)?.discountCents ?? 0)),
+                      )}
+                    </span>
+                  </li>
+                )}
               </ul>
             </fieldset>
           )}
@@ -313,6 +343,14 @@ function PayStep({ payment, onEdit }: { payment: CheckoutResponse; onEdit: () =>
           <span>{payment.shippingLabel}</span>
           <span>{formatUsd(payment.shippingCents)}</span>
         </li>
+        {payment.coupon && (
+          <li>
+            <span>
+              Coupon {payment.coupon.code} ({payment.coupon.percent}% of the markup)
+            </span>
+            <span>{formatUsd(-payment.discountCents)}</span>
+          </li>
+        )}
         <li>
           <span>Tax</span>
           <span>{formatUsd(payment.taxCents)}</span>
