@@ -26,8 +26,6 @@ export function PhotoPage() {
   const index = photos.findIndex((p) => p.id === photo.id)
   const prev = photos[(index - 1 + photos.length) % photos.length]!
   const next = photos[(index + 1) % photos.length]!
-  const shopHref = photo.shopUrl || site.shopUrl
-
   return (
     <div className="page page--photo">
       <SeoHead {...photoPageMeta(photo)} />
@@ -52,9 +50,9 @@ export function PhotoPage() {
             Wildlife photography by {site.photographer}. Part of {site.brand}.
           </p>
           <div className="photo-page__actions">
-            <a className="btn btn--accent" href={shopHref}>
-              Shop Collection
-            </a>
+            <Link className="btn btn--accent" to="/store">
+              Store
+            </Link>
             <Link className="text-link" to="/gallery">
               Back to Gallery
             </Link>

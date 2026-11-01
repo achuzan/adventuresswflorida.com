@@ -37,11 +37,6 @@ export function Footer() {
             <li>
               <Link to="/store">Store</Link>
             </li>
-            <li>
-              <a href={site.shopUrl}>
-                Print Shop
-              </a>
-            </li>
           </ul>
         </div>
 

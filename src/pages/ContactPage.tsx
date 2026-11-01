@@ -64,9 +64,9 @@ const contactLinks = [
     external: true,
   },
   {
-    label: 'Print Shop',
-    value: 'shop.adventuresswflorida.com',
-    href: site.shopUrl,
+    label: 'Store',
+    value: 'adventuresswflorida.com/store',
+    href: '/store',
     external: false,
   },
 ] as const

@@ -38,9 +38,9 @@ export function HomePage() {
             <Link className="btn btn--light" to="/gallery">
               View Gallery
             </Link>
-            <a className="btn btn--accent" href={site.shopUrl}>
-              Shop Prints
-            </a>
+            <Link className="btn btn--accent" to="/store">
+              Store
+            </Link>
           </div>
         </div>
       </section>
@@ -81,12 +81,12 @@ export function HomePage() {
         <div className="band__copy">
           <h2>Prints that bring the wild indoors</h2>
           <p>
-            Choose a favorite image from the gallery, then order museum-quality prints, canvases,
-            and more from the shop — fulfilled through Printify.
+            Choose a favorite image from the gallery, then order prints, calendars, and mugs from
+            the store.
           </p>
-          <a className="btn btn--accent" href={site.shopUrl}>
-            Visit the Print Shop
-          </a>
+          <Link className="btn btn--accent" to="/store">
+            Store
+          </Link>
         </div>
       </section>
 

@@ -261,8 +261,16 @@ main {
   color: var(--mangrove-deep);
 }
 
-.site-nav__shop {
-  margin-left: 0.25rem;
+.site-nav__cart {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.site-nav__cart svg {
+  width: 1.05rem;
+  height: 1.05rem;
+  flex-shrink: 0;
 }
 
 .nav-toggle {
@@ -1228,11 +1236,6 @@ main {
     border-bottom: 1px solid var(--line);
     font-size: 1.1rem;
   }
-
-  .site-nav__shop {
-    margin: 1.25rem 0 0;
-    width: 100%;
-  }
 }
 
 @media (max-width: 720px) {
@@ -1345,6 +1348,31 @@ main {
   justify-content: space-between;
   gap: 1rem;
   margin-bottom: 1rem;
+}
+
+.admin-tabs {
+  display: flex;
+  gap: 0.35rem;
+  margin: 0 0 1.25rem;
+  border-bottom: 1px solid var(--line);
+}
+
+.admin-tabs button {
+  appearance: none;
+  background: transparent;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  padding: 0.7rem 0.95rem;
+  font: inherit;
+  font-weight: 650;
+  color: var(--bark);
+  cursor: pointer;
+}
+
+.admin-tabs button[aria-selected='true'] {
+  color: var(--mangrove-deep);
+  border-bottom-color: var(--mangrove-deep);
 }
 
 .admin-status {

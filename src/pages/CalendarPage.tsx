@@ -91,9 +91,9 @@ export function CalendarPage() {
             Wildlife photography by {site.photographer}. Part of {site.brand}.
           </p>
           <div className="calendar-page__actions">
-            <a className="btn btn--accent" href={site.shopUrl}>
-              Shop Prints
-            </a>
+            <Link className="btn btn--accent" to="/store">
+              Store
+            </Link>
             <Link className="text-link" to="/gallery">
               View Gallery
             </Link>

@@ -9,6 +9,7 @@ import { site } from '../site'
 import type { CalendarNav } from '../shared/site-settings'
 
 type SessionState = 'checking' | 'guest' | 'authed'
+type AdminTab = 'gallery' | 'store'
 
 export function AdminPage() {
   const { photos, refresh } = usePhotos()
@@ -25,6 +26,7 @@ export function AdminPage() {
   const [story, setStory] = useState('')
   const [shopUrl, setShopUrl] = useState<string>(site.shopUrl)
   const [image, setImage] = useState<File | null>(null)
+  const [tab, setTab] = useState<AdminTab>('gallery')
 
   useEffect(() => {
     let cancelled = false
@@ -195,10 +197,8 @@ export function AdminPage() {
 
       <header className="page-hero admin-intro">
         <p className="eyebrow">Private</p>
-        <h1>Gallery admin</h1>
-        <p>
-          Add photos, edit existing ones, control the calendar link, and turn Gelato products on in the store.
-        </p>
+        <h1>Admin</h1>
+        <p>Gallery settings and the store live on separate tabs.</p>
       </header>
 
       {session === 'checking' && <p className="admin-status">Checking session…</p>}
@@ -239,8 +239,37 @@ export function AdminPage() {
             </div>
           )}
 
-          <AdminStorePanel />
+          <div className="admin-tabs" role="tablist" aria-label="Admin">
+            <button
+              type="button"
+              role="tab"
+              id="admin-tab-gallery"
+              aria-selected={tab === 'gallery'}
+              aria-controls="admin-panel-gallery"
+              onClick={() => setTab('gallery')}
+            >
+              Gallery
+            </button>
+            <button
+              type="button"
+              role="tab"
+              id="admin-tab-store"
+              aria-selected={tab === 'store'}
+              aria-controls="admin-panel-store"
+              onClick={() => setTab('store')}
+            >
+              Store
+            </button>
+          </div>
 
+          {tab === 'store' && (
+            <div role="tabpanel" id="admin-panel-store" aria-labelledby="admin-tab-store">
+              <AdminStorePanel />
+            </div>
+          )}
+
+          {tab === 'gallery' && (
+            <div role="tabpanel" id="admin-panel-gallery" aria-labelledby="admin-tab-gallery">
           <CalendarNavCard
             busy={busy}
             onSaved={(label) => {
@@ -310,8 +339,8 @@ export function AdminPage() {
           <section className="admin-card">
             <h2>Edit photos</h2>
             <p className="admin-hint">
-              Update title, location, alt text, story, and shop link. Leave the shop link blank to use
-              the main shop URL.
+              Update title, location, alt text, story, and shop link. Photo pages use the site store
+              button.
             </p>
             <ul className="admin-photo-list">
               {photos.map((photo) => (
@@ -325,6 +354,8 @@ export function AdminPage() {
               ))}
             </ul>
           </section>
+            </div>
+          )}
         </div>
       )}
     </div>

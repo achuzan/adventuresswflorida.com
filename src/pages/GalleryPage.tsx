@@ -3,7 +3,6 @@ import { photoPath } from '../data/photos'
 import { usePhotos } from '../data/PhotosProvider'
 import { PhotoFrame } from '../components/PhotoFrame'
 import { pageMeta, SeoHead } from '../seo'
-import { site } from '../site'
 
 export function GalleryPage() {
   const { photos } = usePhotos()
@@ -39,8 +38,7 @@ export function GalleryPage() {
       </div>
 
       <p className="gallery-note">
-        Bring home your piece of Southwest Florida.{' '}
-        <a href={site.shopUrl}>Shop Adventures in Southwest Florida</a>.
+        Bring home your piece of Southwest Florida. <Link to="/store">Visit the store</Link>.
       </p>
     </div>
   )

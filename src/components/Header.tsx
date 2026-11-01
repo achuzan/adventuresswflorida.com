@@ -110,15 +110,24 @@ export function Header() {
           </Link>
           <Link
             to="/store/cart"
-            className={cartNavActive ? 'is-active' : undefined}
+            className={cartNavActive ? 'site-nav__cart is-active' : 'site-nav__cart'}
             aria-current={cartNavActive ? 'page' : undefined}
             onClick={() => setOpen(false)}
           >
+            <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+              <path
+                d="M6.5 7h14l-1.4 8.2a1.5 1.5 0 0 1-1.48 1.25H9.2a1.5 1.5 0 0 1-1.47-1.2L6.1 7m0 0L5.2 4.2H3"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.8"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+              <circle cx="10" cy="20" r="1.35" fill="currentColor" />
+              <circle cx="17" cy="20" r="1.35" fill="currentColor" />
+            </svg>
             Cart{count > 0 ? ` (${count})` : ''}
           </Link>
-          <a className="btn btn--accent site-nav__shop" href={site.shopUrl}>
-            Shop Prints
-          </a>
         </nav>
       </div>
     </header>
