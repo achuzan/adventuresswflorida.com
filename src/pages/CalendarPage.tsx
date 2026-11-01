@@ -1,29 +1,74 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
-import { getCalendarEntry } from '../data/calendars'
+import { getCalendarEntry, parseCalendarEntry, type CalendarEntry } from '../data/calendars'
 import { calendarPageMeta, SeoHead } from '../seo'
 import { site } from '../site'
 import { NotFoundPage } from './NotFoundPage'
 
 export function CalendarPage() {
   const [params] = useSearchParams()
-  const entry = getCalendarEntry(params.get('year'), params.get('month'))
+  const yearValue = params.get('year')
+  const monthValue = params.get('month')
+  const requestKey = `${yearValue ?? ''}:${monthValue ?? ''}`
+  const seed = getCalendarEntry(yearValue, monthValue)
+  const [entry, setEntry] = useState<CalendarEntry | null>(null)
+  const [loadedKey, setLoadedKey] = useState<string | null>(null)
   const audioRef = useRef<HTMLAudioElement>(null)
   const [playing, setPlaying] = useState(false)
 
   useEffect(() => {
-    window.scrollTo(0, 0)
+    const seedEntry = getCalendarEntry(yearValue, monthValue)
+    if (!seedEntry) {
+      setEntry(null)
+      setLoadedKey(requestKey)
+      return
+    }
+    let cancelled = false
+    setLoadedKey(null)
+    ;(async () => {
+      try {
+        const res = await fetch(`/api/calendars/${seedEntry.year}/${seedEntry.slot}`, { cache: 'no-store' })
+        if (!res.ok) throw new Error('unavailable')
+        const data = (await res.json()) as { entry?: unknown }
+        const published = parseCalendarEntry(data.entry)
+        if (!published || published.year !== seedEntry.year || published.slot !== seedEntry.slot) {
+          throw new Error('invalid')
+        }
+        if (!cancelled) setEntry(published)
+      } catch {
+        if (!cancelled) setEntry(seedEntry)
+      } finally {
+        if (!cancelled) setLoadedKey(requestKey)
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [yearValue, monthValue, requestKey])
+
+  useEffect(() => {
     setPlaying(false)
+    if (loadedKey !== requestKey || !entry) return
+    window.scrollTo(0, 0)
     const audio = audioRef.current
     if (!audio) return
     audio.currentTime = 0
     void audio.play().catch(() => {
       /* Browsers often block autoplay from a QR scan; the play control remains. */
     })
-  }, [entry?.audioSrc])
+  }, [entry, loadedKey, requestKey])
 
-  if (!entry) {
+  if (!seed) {
     return <NotFoundPage />
+  }
+
+  if (loadedKey !== requestKey || !entry) {
+    return (
+      <div className="page page--calendar">
+        <SeoHead {...calendarPageMeta(seed)} />
+        <p className="calendar-page__status">Loading calendar page…</p>
+      </div>
+    )
   }
 
   async function togglePlayback() {

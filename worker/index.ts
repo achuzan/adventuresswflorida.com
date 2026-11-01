@@ -12,11 +12,14 @@ import {
   upsertPhoto,
 } from './catalog'
 import { randomWash, slugify, type Photo } from '../src/shared/photo'
+import { CALENDAR_SUBJECT_MAX, parseCalendarSlot } from '../src/shared/calendar'
 import { validateCalendarNav } from '../src/shared/site-settings'
+import { getCalendarSlot, listCalendars, saveCalendarSlot } from './calendars'
 import { getSiteSettings, saveSiteSettings } from './settings'
 import { handleStoreRequest } from './store-api'
 
 const MAX_UPLOAD_BYTES = 12 * 1024 * 1024
+const MAX_AUDIO_BYTES = 20 * 1024 * 1024
 const ALLOWED_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp'])
 
 function json(data: unknown, init: ResponseInit = {}) {
@@ -44,6 +47,44 @@ function extensionFor(type: string) {
   if (type === 'image/png') return 'png'
   if (type === 'image/webp') return 'webp'
   return 'jpg'
+}
+
+function fileExtension(name: string) {
+  const match = /\.([a-z0-9]+)$/i.exec(name.trim())
+  return match?.[1]?.toLowerCase() ?? ''
+}
+
+function describeImage(file: File) {
+  const ext = fileExtension(file.name)
+  if (ext === 'jpg' || ext === 'jpeg' || file.type === 'image/jpeg') {
+    return { ext: 'jpg', contentType: 'image/jpeg' }
+  }
+  if (ext === 'png' || file.type === 'image/png') return { ext: 'png', contentType: 'image/png' }
+  if (ext === 'webp' || file.type === 'image/webp') return { ext: 'webp', contentType: 'image/webp' }
+  return null
+}
+
+function describeAudio(file: File) {
+  const ext = fileExtension(file.name)
+  if (ext === 'mp3' || file.type === 'audio/mpeg' || file.type === 'audio/mp3') {
+    return { ext: 'mp3', contentType: 'audio/mpeg' }
+  }
+  if (ext === 'wav' || file.type === 'audio/wav' || file.type === 'audio/x-wav') {
+    return { ext: 'wav', contentType: 'audio/wav' }
+  }
+  if (ext === 'm4a' || file.type === 'audio/mp4' || file.type === 'audio/x-m4a') {
+    return { ext: 'm4a', contentType: 'audio/mp4' }
+  }
+  if (ext === 'aac' || file.type === 'audio/aac') return { ext: 'aac', contentType: 'audio/aac' }
+  if (ext === 'ogg' || file.type === 'audio/ogg') return { ext: 'ogg', contentType: 'audio/ogg' }
+  return null
+}
+
+async function deleteUploadedMedia(env: Env, src: string) {
+  if (!src.startsWith('/media/')) return
+  const key = src.slice('/media/'.length)
+  if (!key || key.includes('..')) return
+  await env.PHOTOS_KV.delete(mediaKvKey(key))
 }
 
 function uniqueId(base: string, existing: Set<string>) {
@@ -231,6 +272,96 @@ async function handleApi(request: Request, env: Env, path: string) {
       }
       return json({ ok: true })
     }
+  }
+
+  if (path === '/api/calendars' && request.method === 'GET') {
+    const calendars = await listCalendars(env.PHOTOS_KV)
+    return json({ calendars })
+  }
+
+  const calendarMatch = path.match(/^\/api\/calendars\/(\d{4})\/([a-z]+)$/)
+  if (calendarMatch && request.method === 'GET') {
+    const year = Number(calendarMatch[1])
+    const slot = parseCalendarSlot(calendarMatch[2] ?? null)
+    if (!slot) return json({ error: 'Calendar page not found' }, { status: 404 })
+    const entry = await getCalendarSlot(env.PHOTOS_KV, year, slot)
+    if (!entry) return json({ error: 'Calendar page not found' }, { status: 404 })
+    return json({ entry })
+  }
+
+  const adminCalendarMatch = path.match(/^\/api\/admin\/calendars\/(\d{4})\/([a-z]+)$/)
+  if (adminCalendarMatch && request.method === 'PATCH') {
+    if (!(await requireAdmin(request, env))) return unauthorized()
+    const year = Number(adminCalendarMatch[1])
+    const slot = parseCalendarSlot(adminCalendarMatch[2] ?? null)
+    if (!slot) return json({ error: 'Calendar page not found' }, { status: 404 })
+
+    const current = await getCalendarSlot(env.PHOTOS_KV, year, slot)
+    if (!current) return json({ error: 'Calendar page not found' }, { status: 404 })
+
+    let form: FormData
+    try {
+      form = await request.formData()
+    } catch {
+      return badRequest('Invalid form body')
+    }
+
+    const subject = String(form.get('subject') ?? '').trim()
+    if (!subject) return badRequest('Subject is required')
+    if (subject.length > CALENDAR_SUBJECT_MAX) {
+      return badRequest(`Subject must be ${CALENDAR_SUBJECT_MAX} characters or fewer`)
+    }
+
+    const photo = form.get('photo')
+    const audio = form.get('audio')
+    let photoUpload: { file: File; ext: string; contentType: string } | null = null
+    let audioUpload: { file: File; ext: string; contentType: string } | null = null
+
+    if (photo instanceof File && photo.size > 0) {
+      if (photo.size > MAX_UPLOAD_BYTES) return badRequest('Photo must be 12 MB or smaller')
+      const described = describeImage(photo)
+      if (!described) return badRequest('Use a JPG, PNG, or WebP image')
+      photoUpload = { file: photo, ...described }
+    }
+
+    if (audio instanceof File && audio.size > 0) {
+      if (audio.size > MAX_AUDIO_BYTES) return badRequest('Audio must be 20 MB or smaller')
+      const described = describeAudio(audio)
+      if (!described) return badRequest('Use an MP3, M4A, WAV, AAC, or OGG audio file')
+      audioUpload = { file: audio, ...described }
+    }
+
+    let photoSrc = current.photoSrc
+    let audioSrc = current.audioSrc
+    let uploadedPhotoKey: string | null = null
+    let uploadedAudioKey: string | null = null
+
+    if (photoUpload) {
+      uploadedPhotoKey = `calendars/${year}/${slot}-${crypto.randomUUID().slice(0, 8)}.${photoUpload.ext}`
+      await env.PHOTOS_KV.put(mediaKvKey(uploadedPhotoKey), await photoUpload.file.arrayBuffer(), {
+        metadata: { contentType: photoUpload.contentType },
+      })
+      photoSrc = `/media/${uploadedPhotoKey}`
+    }
+
+    if (audioUpload) {
+      uploadedAudioKey = `calendars/${year}/${slot}-${crypto.randomUUID().slice(0, 8)}.${audioUpload.ext}`
+      await env.PHOTOS_KV.put(mediaKvKey(uploadedAudioKey), await audioUpload.file.arrayBuffer(), {
+        metadata: { contentType: audioUpload.contentType },
+      })
+      audioSrc = `/media/${uploadedAudioKey}`
+    }
+
+    const entry = await saveCalendarSlot(env.PHOTOS_KV, year, slot, { subject, photoSrc, audioSrc })
+    if (!entry) {
+      if (uploadedPhotoKey) await env.PHOTOS_KV.delete(mediaKvKey(uploadedPhotoKey))
+      if (uploadedAudioKey) await env.PHOTOS_KV.delete(mediaKvKey(uploadedAudioKey))
+      return badRequest('Could not save this calendar page')
+    }
+
+    if (uploadedPhotoKey) await deleteUploadedMedia(env, current.photoSrc)
+    if (uploadedAudioKey) await deleteUploadedMedia(env, current.audioSrc)
+    return json({ entry })
   }
 
   return json({ error: 'Not found' }, { status: 404 })

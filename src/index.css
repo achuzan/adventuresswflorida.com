@@ -859,6 +859,11 @@ main {
   max-width: calc(var(--max) + 4rem);
 }
 
+.calendar-page__status {
+  margin: 2rem 0;
+  color: var(--bark);
+}
+
 .calendar-page__layout {
   display: grid;
   gap: clamp(1.5rem, 4vw, 2.75rem);
@@ -1352,6 +1357,7 @@ main {
 
 .admin-tabs {
   display: flex;
+  flex-wrap: wrap;
   gap: 0.35rem;
   margin: 0 0 1.25rem;
   border-bottom: 1px solid var(--line);
@@ -1471,6 +1477,44 @@ main {
   gap: 1rem;
 }
 
+.admin-calendar-editor {
+  display: grid;
+  grid-template-columns: 11rem 1fr;
+  gap: 1.25rem;
+  align-items: start;
+}
+
+.admin-calendar-editor img {
+  width: 100%;
+  aspect-ratio: 1;
+  object-fit: cover;
+  border-radius: 0.65rem;
+  background: var(--mist);
+}
+
+.admin-calendar-editor img.is-logo {
+  object-fit: contain;
+  padding: 0.75rem;
+}
+
+.admin-calendar-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+}
+
+.admin-calendar-fields audio {
+  width: 100%;
+  margin-top: 0.35rem;
+}
+
+.admin-file-note {
+  margin: -0.35rem 0 0;
+  color: var(--bark);
+  font-size: 0.88rem;
+  font-weight: 400;
+}
+
 @media (max-width: 640px) {
   .admin-grid {
     grid-template-columns: 1fr;
@@ -1487,6 +1531,14 @@ main {
   .admin-photo-row__thumb {
     width: 100%;
     height: 12rem;
+  }
+
+  .admin-calendar-editor {
+    grid-template-columns: 1fr;
+  }
+
+  .admin-calendar-editor img {
+    max-width: 16rem;
   }
 }
 

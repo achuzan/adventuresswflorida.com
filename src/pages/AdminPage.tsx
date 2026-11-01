@@ -3,13 +3,14 @@ import { Link } from 'react-router-dom'
 import { usePhotos } from '../data/PhotosProvider'
 import { useSiteSettings } from '../data/SiteSettingsProvider'
 import { photoImageSrc, photoPath, type Photo } from '../data/photos'
+import { AdminCalendarPanel } from '../components/AdminCalendarPanel'
 import { AdminStorePanel } from '../components/AdminStorePanel'
 import { SeoHead } from '../seo'
 import { site } from '../site'
 import type { CalendarNav } from '../shared/site-settings'
 
 type SessionState = 'checking' | 'guest' | 'authed'
-type AdminTab = 'gallery' | 'store'
+type AdminTab = 'gallery' | 'calendar' | 'store'
 
 export function AdminPage() {
   const { photos, refresh } = usePhotos()
@@ -198,7 +199,7 @@ export function AdminPage() {
       <header className="page-hero admin-intro">
         <p className="eyebrow">Private</p>
         <h1>Admin</h1>
-        <p>Gallery settings and the store live on separate tabs.</p>
+        <p>Gallery, calendar pages, and the store live on separate tabs.</p>
       </header>
 
       {session === 'checking' && <p className="admin-status">Checking session…</p>}
@@ -253,6 +254,16 @@ export function AdminPage() {
             <button
               type="button"
               role="tab"
+              id="admin-tab-calendar"
+              aria-selected={tab === 'calendar'}
+              aria-controls="admin-panel-calendar"
+              onClick={() => setTab('calendar')}
+            >
+              Calendar
+            </button>
+            <button
+              type="button"
+              role="tab"
               id="admin-tab-store"
               aria-selected={tab === 'store'}
               aria-controls="admin-panel-store"
@@ -261,6 +272,12 @@ export function AdminPage() {
               Store
             </button>
           </div>
+
+          {tab === 'calendar' && (
+            <div role="tabpanel" id="admin-panel-calendar" aria-labelledby="admin-tab-calendar">
+              <AdminCalendarPanel />
+            </div>
+          )}
 
           {tab === 'store' && (
             <div role="tabpanel" id="admin-panel-store" aria-labelledby="admin-tab-store">
