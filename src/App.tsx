@@ -43,6 +43,8 @@ function Shell() {
           <Route path="/contact" element={<ContactPage />} />
           <Route path="/calendar" element={<CalendarPage />} />
           <Route path="/store" element={<StorePage />} />
+          <Route path="/store/category/:categoryId" element={<StorePage />} />
+          <Route path="/store/collection/:collectionId" element={<StorePage />} />
           <Route path="/store/cart" element={<StoreCartPage />} />
           <Route path="/store/checkout" element={<StoreCheckoutPage />} />
           <Route path="/store/order/:orderId" element={<StoreOrderPage />} />

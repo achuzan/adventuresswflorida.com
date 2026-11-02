@@ -1554,13 +1554,133 @@ main {
 }
 
 .page--store {
-  max-width: calc(var(--max) + 4rem);
+  max-width: calc(var(--max) + 6rem);
+}
+
+.store-top h1 {
+  margin-bottom: 0.35rem;
+}
+
+.store-shop {
+  display: grid;
+  grid-template-columns: 14rem minmax(0, 1fr);
+  gap: 2rem;
+  align-items: start;
+}
+
+.store-side {
+  position: sticky;
+  top: calc(var(--header-h) + 1rem);
+  padding: 1rem;
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 0.75rem;
+}
+
+.store-side__label {
+  margin: 0.85rem 0 0.35rem;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--bark);
+}
+
+.store-side__label:first-child {
+  margin-top: 0;
+}
+
+.store-cats {
+  display: flex;
+  flex-direction: column;
+}
+
+.store-cats a {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.45rem 0.2rem;
+  border-bottom: 1px solid var(--line);
+  color: var(--ink);
+  text-decoration: none;
+  font-weight: 600;
+}
+
+.store-cats a[aria-current='page'] {
+  color: var(--orange-deep);
+}
+
+.store-cats span {
+  color: var(--bark);
+  font-weight: 500;
+}
+
+.store-featured h2 {
+  margin: 0 0 0.75rem;
+  font-size: 1.35rem;
+}
+
+.store-collections {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(12rem, 1fr));
+  gap: 0.75rem;
+  margin-bottom: 1.5rem;
+}
+
+.store-collection {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  padding: 1rem;
+  background: var(--mangrove);
+  color: #fff;
+  text-decoration: none;
+  border-radius: 0.75rem;
+}
+
+.store-collection span {
+  color: rgba(255, 255, 255, 0.82);
+  font-size: 0.92rem;
+}
+
+.store-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+
+.store-toolbar label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: var(--bark);
+}
+
+.store-toolbar input,
+.store-toolbar select {
+  min-width: 12rem;
+  padding: 0.65rem 0.75rem;
+  border: 1px solid var(--line);
+  border-radius: 0.5rem;
+  background: #fff;
+  color: var(--ink);
+  font: inherit;
+  font-weight: 500;
+}
+
+.store-toolbar p {
+  margin: 0 0 0.55rem auto;
+  color: var(--bark);
 }
 
 .store-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(15.5rem, 1fr));
-  gap: 1.25rem;
+  grid-template-columns: repeat(auto-fill, minmax(14.5rem, 1fr));
+  gap: 1rem;
 }
 
 .store-card {
@@ -1568,10 +1688,15 @@ main {
   flex-direction: column;
   text-decoration: none;
   color: inherit;
-  background: rgba(255, 255, 255, 0.72);
+  background: #fff;
   border: 1px solid var(--line);
-  border-radius: 1rem;
+  border-radius: 0.75rem;
   overflow: hidden;
+  box-shadow: 0 1px 0 rgba(34, 25, 18, 0.04);
+}
+
+.store-card:hover {
+  border-color: rgba(30, 77, 69, 0.35);
 }
 
 .store-card img,
@@ -1598,8 +1723,14 @@ main {
 .store-card__body {
   display: flex;
   flex-direction: column;
-  gap: 0.2rem;
-  padding: 0.9rem 1rem 1.1rem;
+  gap: 0.25rem;
+  padding: 0.85rem 1rem 1rem;
+}
+
+.store-card strong {
+  font-family: var(--font-display);
+  font-size: 1.15rem;
+  line-height: 1.3;
 }
 
 .store-card__type,
@@ -1608,21 +1739,140 @@ main {
   color: var(--bark);
 }
 
+.store-card__type {
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
 .store-card__price,
 .store-product__price {
   color: var(--mangrove);
   font-weight: 700;
 }
 
+.store-product__price {
+  margin: 0.2rem 0;
+  font-size: 1.7rem;
+}
+
 .store-product {
   display: grid;
-  grid-template-columns: minmax(0, 1.05fr) minmax(0, 0.95fr);
+  grid-template-columns: minmax(0, 1.05fr) minmax(18rem, 0.9fr);
   gap: clamp(1.25rem, 3vw, 2.5rem);
   align-items: start;
 }
 
+.store-product__stage {
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 0.75rem;
+  overflow: hidden;
+}
+
+.store-buy {
+  padding: 1.25rem;
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 0.75rem;
+}
+
 .store-product h1 {
-  font-size: clamp(2rem, 4vw, 3rem);
+  margin: 0.15rem 0 0.4rem;
+  font-size: clamp(1.8rem, 3vw, 2.6rem);
+}
+
+.store-product__copy {
+  grid-column: 1 / -1;
+  padding: 1.25rem;
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 0.75rem;
+}
+
+.store-options {
+  display: grid;
+  gap: 0.9rem;
+  margin: 1rem 0;
+}
+
+.store-options fieldset {
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.store-options legend {
+  margin-bottom: 0.4rem;
+  font-size: 0.82rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--bark);
+}
+
+.store-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.store-pills button {
+  padding: 0.45rem 0.75rem;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--foam);
+  color: var(--ink);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.store-pills button.is-selected {
+  background: var(--mangrove);
+  border-color: var(--mangrove);
+  color: #fff;
+}
+
+.store-buy__row {
+  display: flex;
+  align-items: end;
+  gap: 0.75rem;
+}
+
+.store-buy__row label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  width: 5rem;
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: var(--bark);
+}
+
+.store-buy__row .btn {
+  flex: 1;
+}
+
+.store-facts {
+  margin: 1rem 0 0;
+  padding: 0.85rem 0 0;
+  border-top: 1px solid var(--line);
+  list-style: none;
+  color: var(--bark);
+  font-size: 0.92rem;
+}
+
+.store-facts li + li {
+  margin-top: 0.2rem;
+}
+
+.store-assign {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem 0.9rem;
+  margin-top: 0.45rem;
 }
 
 .store-crumb {
@@ -1647,7 +1897,6 @@ main {
   text-align: left;
 }
 
-.store-options,
 .store-form__grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -1813,12 +2062,33 @@ main {
 }
 
 @media (max-width: 800px) {
+  .store-shop,
   .store-product,
   .store-options,
   .store-form__grid,
   .store-line,
   .store-admin-product {
     grid-template-columns: 1fr;
+  }
+
+  .store-side {
+    position: static;
+  }
+
+  .store-cats {
+    flex-direction: row;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+  }
+
+  .store-cats a {
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    padding: 0.3rem 0.7rem;
+  }
+
+  .store-toolbar p {
+    margin-left: 0;
   }
 
   .store-span-2 {

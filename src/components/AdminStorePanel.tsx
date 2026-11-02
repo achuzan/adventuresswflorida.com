@@ -44,6 +44,13 @@ type StoreCoupon = {
   active: boolean
 }
 
+type StoreGroup = {
+  id: string
+  name: string
+  description: string
+  productIds: string[]
+}
+
 type AdminStore = {
   settings: {
     markupPercent: number
@@ -54,6 +61,7 @@ type AdminStore = {
   notes: string[]
   fetchedAt: string
   coupons: StoreCoupon[]
+  groups: { categories: StoreGroup[]; collections: StoreGroup[] }
   secrets: {
     gelato: boolean
     stripeSecret: boolean
@@ -77,6 +85,8 @@ export function AdminStorePanel() {
   const [testing, setTesting] = useState(false)
   const [couponCode, setCouponCode] = useState('')
   const [couponPercent, setCouponPercent] = useState('10')
+  const [categoryName, setCategoryName] = useState('')
+  const [collectionName, setCollectionName] = useState('')
 
   async function load(refresh = false, fillForm = false, mergePrices = false) {
     const payload = refresh
@@ -170,6 +180,100 @@ export function AdminStorePanel() {
 
   function setCoupons(coupons: StoreCoupon[]) {
     setData((current) => (current ? { ...current, coupons } : current))
+  }
+
+  function setGroups(groups: AdminStore['groups']) {
+    setData((current) => (current ? { ...current, groups } : current))
+  }
+
+  const groups = data?.groups ?? { categories: [], collections: [] }
+
+  function memberIds(kind: 'categories' | 'collections', productId: string) {
+    return groups[kind].filter((group) => group.productIds.includes(productId)).map((group) => group.id)
+  }
+
+  async function addGroup(event: FormEvent, kind: 'categories' | 'collections') {
+    event.preventDefault()
+    const name = (kind === 'categories' ? categoryName : collectionName).trim()
+    if (name.length < 2) return
+    setBusy(true)
+    setError(null)
+    try {
+      const payload = await storeJson<{ groups: AdminStore['groups'] }>(`/api/admin/store/${kind}`, {
+        method: 'POST',
+        credentials: 'same-origin',
+        body: JSON.stringify({ name }),
+      })
+      setGroups(payload.groups)
+      if (kind === 'categories') setCategoryName('')
+      else setCollectionName('')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not save that')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function removeGroup(kind: 'categories' | 'collections', group: StoreGroup) {
+    setBusy(true)
+    setError(null)
+    try {
+      const payload = await storeJson<{ groups: AdminStore['groups'] }>(
+        `/api/admin/store/${kind}/${encodeURIComponent(group.id)}`,
+        { method: 'DELETE', credentials: 'same-origin' },
+      )
+      setGroups(payload.groups)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not remove that')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function setMembership(product: AdminProduct, kind: 'categories' | 'collections', groupId: string, on: boolean) {
+    const field = kind === 'categories' ? 'categoryIds' : 'collectionIds'
+    const current = memberIds(kind, product.id)
+    const next = on ? [...current, groupId] : current.filter((id) => id !== groupId)
+    setError(null)
+    setData((currentData) => {
+      if (!currentData?.groups) return currentData
+      return {
+        ...currentData,
+        groups: {
+          ...currentData.groups,
+          [kind]: currentData.groups[kind].map((group) =>
+            group.id === groupId
+              ? {
+                  ...group,
+                  productIds: on
+                    ? group.productIds.includes(product.id)
+                      ? group.productIds
+                      : [...group.productIds, product.id]
+                    : group.productIds.filter((id) => id !== product.id),
+                }
+              : group,
+          ),
+        },
+      }
+    })
+    try {
+      const payload = await storeJson<{ groups: AdminStore['groups'] }>(
+        `/api/admin/store/products/${encodeURIComponent(product.id)}`,
+        {
+          method: 'PATCH',
+          credentials: 'same-origin',
+          body: JSON.stringify({ [field]: next }),
+        },
+      )
+      setGroups(payload.groups)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not update that product')
+      try {
+        await load(false, false)
+      } catch {
+        /* keep the assignment error */
+      }
+    }
   }
 
   async function addCoupon(event: FormEvent) {
@@ -452,6 +556,75 @@ export function AdminStorePanel() {
               ))}
             </ul>
           )}
+          <h2>Categories and collections</h2>
+          <p className="admin-hint">
+            Categories are the shop departments, such as Prints or Calendars. Collections are curated groups, such as
+            a season or a gift set. Assign each product below. The store shows both.
+          </p>
+          <form className="admin-form" onSubmit={(event) => void addGroup(event, 'categories')}>
+            <label>
+              New category
+              <input
+                value={categoryName}
+                onChange={(event) => setCategoryName(event.target.value)}
+                placeholder="Prints"
+                maxLength={60}
+                required
+              />
+            </label>
+            <div>
+              <button className="btn btn--accent" type="submit" disabled={busy}>
+                Add category
+              </button>
+            </div>
+          </form>
+          {groups.categories.length === 0 ? (
+            <p className="admin-hint">No categories yet.</p>
+          ) : (
+            <ul className="store-orders">
+              {groups.categories.map((group) => (
+                <li key={group.id}>
+                  <strong>{group.name}</strong>
+                  <span>{group.productIds.length} products</span>
+                  <button type="button" className="text-link" disabled={busy} onClick={() => void removeGroup('categories', group)}>
+                    Remove
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+          <form className="admin-form" onSubmit={(event) => void addGroup(event, 'collections')}>
+            <label>
+              New collection
+              <input
+                value={collectionName}
+                onChange={(event) => setCollectionName(event.target.value)}
+                placeholder="Spring gifts"
+                maxLength={60}
+                required
+              />
+            </label>
+            <div>
+              <button className="btn btn--accent" type="submit" disabled={busy}>
+                Add collection
+              </button>
+            </div>
+          </form>
+          {groups.collections.length === 0 ? (
+            <p className="admin-hint">No collections yet.</p>
+          ) : (
+            <ul className="store-orders">
+              {groups.collections.map((group) => (
+                <li key={group.id}>
+                  <strong>{group.name}</strong>
+                  <span>{group.productIds.length} products</span>
+                  <button type="button" className="text-link" disabled={busy} onClick={() => void removeGroup('collections', group)}>
+                    Remove
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
           {data.notes.length > 0 && (
             <ul className="admin-hint">
               {data.notes.map((note) => (
@@ -474,7 +647,7 @@ export function AdminStorePanel() {
                   <div>
                     <strong>{product.title}</strong>
                     <p className="admin-hint">
-                      {product.source} · {product.status || 'active'} · {product.variantCount} option
+                      {product.source} · {product.status || 'active'} · {product.variantCount} variant
                       {product.variantCount === 1 ? '' : 's'}
                       {product.productType ? ` · ${product.productType}` : ''}
                       {product.status === 'publishing'
@@ -504,6 +677,30 @@ export function AdminStorePanel() {
                       />
                       Show in the store
                     </label>
+                    {(groups.categories.length > 0 || groups.collections.length > 0) && (
+                      <div className="store-assign">
+                        {groups.categories.map((group) => (
+                          <label key={group.id} className="admin-check">
+                            <input
+                              type="checkbox"
+                              checked={group.productIds.includes(product.id)}
+                              onChange={(event) => void setMembership(product, 'categories', group.id, event.target.checked)}
+                            />
+                            {group.name}
+                          </label>
+                        ))}
+                        {groups.collections.map((group) => (
+                          <label key={group.id} className="admin-check">
+                            <input
+                              type="checkbox"
+                              checked={group.productIds.includes(product.id)}
+                              onChange={(event) => void setMembership(product, 'collections', group.id, event.target.checked)}
+                            />
+                            Collection: {group.name}
+                          </label>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 </li>
               ))}

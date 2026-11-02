@@ -22,16 +22,22 @@ import {
   ensurePrices,
   couponPercent,
   getCoupons,
+  getGroups,
   getOrder,
   getSettings,
   listOrders,
   saveCoupons,
+  saveGroups,
+  assignProduct,
+  groupSlug,
   readCatalog,
   saveOrder,
   saveSettings,
   writeCatalog,
   type OrderLeg,
   type StoreCoupon,
+  type StoreGroup,
+  type StoreGroups,
   type StoreOrder,
   type StoreSettings,
 } from './store-data'
@@ -117,6 +123,7 @@ function toPublic(
   product: InternalProduct,
   markupPercent: number,
   prices: Map<string, number | null>,
+  categoryIds: string[],
 ): StoreProductPublic {
   return {
     id: product.id,
@@ -125,6 +132,7 @@ function toPublic(
     previewUrl: product.previewUrl,
     productType: product.productType,
     options: product.options,
+    categoryIds,
     variants: product.variants.map((variant) => {
       const wholesale = prices.get(variant.productUid)
       return {
@@ -588,6 +596,7 @@ async function adminPayload(env: Env, refresh: boolean) {
       : ['Set GELATO_API_KEY with wrangler secret put, then refresh.'],
     fetchedAt: catalog.fetchedAt,
     coupons: await getCoupons(env.PHOTOS_KV),
+    groups: await getGroups(env.PHOTOS_KV),
     secrets: {
       gelato: Boolean(env.GELATO_API_KEY),
       stripeSecret: Boolean(env.STRIPE_SECRET_KEY),
@@ -656,6 +665,14 @@ export async function handleStoreRequest(request: Request, env: Env) {
     const couponMatch = /^\/api\/admin\/store\/coupons\/([A-Za-z0-9-]{3,24})$/.exec(path)
     if (couponMatch && request.method === 'PATCH') return await adminUpdateCoupon(request, env, couponMatch[1]!)
     if (couponMatch && request.method === 'DELETE') return await adminDeleteCoupon(request, env, couponMatch[1]!)
+    if (path === '/api/admin/store/categories' && request.method === 'POST') return await adminCreateGroup(request, env, 'categories')
+    if (path === '/api/admin/store/collections' && request.method === 'POST') return await adminCreateGroup(request, env, 'collections')
+    const categoryMatch = /^\/api\/admin\/store\/categories\/([a-z0-9-]{2,40})$/.exec(path)
+    if (categoryMatch && request.method === 'PATCH') return await adminUpdateGroup(request, env, 'categories', categoryMatch[1]!)
+    if (categoryMatch && request.method === 'DELETE') return await adminDeleteGroup(request, env, 'categories', categoryMatch[1]!)
+    const collectionMatch = /^\/api\/admin\/store\/collections\/([a-z0-9-]{2,40})$/.exec(path)
+    if (collectionMatch && request.method === 'PATCH') return await adminUpdateGroup(request, env, 'collections', collectionMatch[1]!)
+    if (collectionMatch && request.method === 'DELETE') return await adminDeleteGroup(request, env, 'collections', collectionMatch[1]!)
     const toggle = /^\/api\/admin\/store\/products\/([A-Za-z0-9_-]{8,80})$/.exec(path)
     if (toggle && request.method === 'PATCH') return await adminToggle(request, env, toggle[1]!)
     const sync = /^\/api\/admin\/store\/orders\/(ord_[A-Za-z0-9_-]{8,80})\/sync$/.exec(path)
@@ -666,8 +683,26 @@ export async function handleStoreRequest(request: Request, env: Env) {
   }
 }
 
+function categoryIdsFor(groups: StoreGroups, productId: string) {
+  return groups.categories.filter((group) => group.productIds.includes(productId)).map((group) => group.id)
+}
+
+function publicGroups(groups: StoreGroups) {
+  const shape = (group: StoreGroup) => ({
+    id: group.id,
+    name: group.name,
+    description: group.description,
+    productIds: group.productIds,
+  })
+  return {
+    categories: groups.categories.map(shape),
+    collections: groups.collections.map(shape),
+  }
+}
+
 async function publicList(env: Env) {
   const settings = await getSettings(env.PHOTOS_KV)
+  const groups = await getGroups(env.PHOTOS_KV)
   const catalog = await loadCatalog(env, false)
   const visible = catalog.products.filter((product) => settings.enabled[product.id] === true && isSellable(product))
   const prices = env.GELATO_API_KEY
@@ -678,15 +713,19 @@ async function publicList(env: Env) {
         10,
       )
     : new Map<string, number | null>()
-  const products = visible.map((product) => toPublic(product, settings.markupPercent, prices))
+  const products = visible.map((product) =>
+    toPublic(product, settings.markupPercent, prices, categoryIdsFor(groups, product.id)),
+  )
   return json({
     products,
+    ...publicGroups(groups),
     pricesPending: products.some((product) => product.variants.some((variant) => variant.pricePending)),
   })
 }
 
 async function publicOne(env: Env, id: string) {
   const settings = await getSettings(env.PHOTOS_KV)
+  const groups = await getGroups(env.PHOTOS_KV)
   const catalog = await loadCatalog(env, false)
   const product = catalog.products.find((item) => item.id === id)
   if (!product || settings.enabled[product.id] !== true || !isSellable(product)) {
@@ -700,9 +739,12 @@ async function publicOne(env: Env, id: string) {
         20,
       )
     : new Map<string, number | null>()
-  const pub = toPublic(product, settings.markupPercent, prices)
+  const pub = toPublic(product, settings.markupPercent, prices, categoryIdsFor(groups, product.id))
   return json({
     product: pub,
+    categories: groups.categories
+      .filter((group) => pub.categoryIds.includes(group.id))
+      .map((group) => ({ id: group.id, name: group.name })),
     pricesPending: pub.variants.some((variant) => variant.pricePending),
   })
 }
@@ -971,13 +1013,79 @@ async function adminDeleteCoupon(request: Request, env: Env, rawCode: string) {
   return json({ coupons: await saveCoupons(env.PHOTOS_KV, coupons.filter((coupon) => coupon.code !== code)) })
 }
 
+function groupText(value: unknown, max: number) {
+  return typeof value === 'string' ? value.trim().slice(0, max) : ''
+}
+
+async function adminCreateGroup(request: Request, env: Env, kind: 'categories' | 'collections') {
+  await requireAdmin(request, env)
+  const body = (await readJson(request)) as { name?: unknown; description?: unknown }
+  const name = groupText(body.name, 60)
+  if (name.length < 2) throw new HttpError(400, 'Use a name of at least 2 characters')
+  const groups = await getGroups(env.PHOTOS_KV)
+  const list = groups[kind]
+  if (list.length >= 30) throw new HttpError(400, 'You can keep up to 30 of these')
+  const next: StoreGroup = {
+    id: groupSlug(name, list.map((group) => group.id)),
+    name,
+    description: groupText(body.description, 240),
+    productIds: [],
+  }
+  const saved = await saveGroups(env.PHOTOS_KV, { ...groups, [kind]: [...list, next] })
+  return json({ groups: saved })
+}
+
+async function adminUpdateGroup(request: Request, env: Env, kind: 'categories' | 'collections', id: string) {
+  await requireAdmin(request, env)
+  const body = (await readJson(request)) as { name?: unknown; description?: unknown }
+  const groups = await getGroups(env.PHOTOS_KV)
+  const list = groups[kind]
+  const group = list.find((item) => item.id === id)
+  if (!group) return json({ error: 'Not found' }, 404)
+  if ('name' in body) {
+    const name = groupText(body.name, 60)
+    if (name.length < 2) throw new HttpError(400, 'Use a name of at least 2 characters')
+    group.name = name
+  }
+  if ('description' in body) group.description = groupText(body.description, 240)
+  const saved = await saveGroups(env.PHOTOS_KV, groups)
+  return json({ groups: saved })
+}
+
+async function adminDeleteGroup(request: Request, env: Env, kind: 'categories' | 'collections', id: string) {
+  await requireAdmin(request, env)
+  const groups = await getGroups(env.PHOTOS_KV)
+  if (!groups[kind].some((group) => group.id === id)) return json({ error: 'Not found' }, 404)
+  const saved = await saveGroups(env.PHOTOS_KV, {
+    ...groups,
+    [kind]: groups[kind].filter((group) => group.id !== id),
+  })
+  return json({ groups: saved })
+}
+
 async function adminToggle(request: Request, env: Env, id: string) {
   await requireAdmin(request, env)
-  const body = (await readJson(request)) as { enabled?: unknown }
+  const body = (await readJson(request)) as {
+    enabled?: unknown
+    categoryIds?: unknown
+    collectionIds?: unknown
+  }
   const settings = await getSettings(env.PHOTOS_KV)
-  settings.enabled[id] = Boolean(body.enabled)
-  await saveSettings(env.PHOTOS_KV, settings)
-  return json({ ok: true, enabled: settings.enabled[id] })
+  if ('enabled' in body) {
+    settings.enabled[id] = Boolean(body.enabled)
+    await saveSettings(env.PHOTOS_KV, settings)
+  }
+  let groups = await getGroups(env.PHOTOS_KV)
+  if (Array.isArray(body.categoryIds) || Array.isArray(body.collectionIds)) {
+    if (Array.isArray(body.categoryIds)) {
+      groups.categories = assignProduct(groups.categories, id, body.categoryIds.map(String))
+    }
+    if (Array.isArray(body.collectionIds)) {
+      groups.collections = assignProduct(groups.collections, id, body.collectionIds.map(String))
+    }
+    groups = await saveGroups(env.PHOTOS_KV, groups)
+  }
+  return json({ ok: true, enabled: settings.enabled[id] === true, groups })
 }
 
 async function adminSync(request: Request, env: Env, orderId: string) {

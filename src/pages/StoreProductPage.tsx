@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+﻿import { useEffect, useRef, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { useCart } from '../data/CartProvider'
 import { storeJson } from '../data/store-client'
@@ -10,6 +10,7 @@ export function StoreProductPage() {
   const { productId = '' } = useParams()
   const { addItem } = useCart()
   const [product, setProduct] = useState<StoreProductPublic | null>(null)
+  const [categories, setCategories] = useState<{ id: string; name: string }[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [selected, setSelected] = useState<Record<string, string>>({})
@@ -24,15 +25,19 @@ export function StoreProductPage() {
     let attempts = 0
     setLoading(true)
     setProduct(null)
+    setCategories([])
     setError(null)
 
     async function load() {
       try {
-        const data = await storeJson<{ product: StoreProductPublic; pricesPending?: boolean }>(
-          `/api/store/products/${encodeURIComponent(productId)}`,
-        )
+        const data = await storeJson<{
+          product: StoreProductPublic
+          categories?: { id: string; name: string }[]
+          pricesPending?: boolean
+        }>(`/api/store/products/${encodeURIComponent(productId)}`)
         if (cancelled) return
         setProduct(data.product)
+        setCategories(data.categories ?? [])
         setError(null)
         if (data.pricesPending && attempts < 6) {
           attempts += 1
@@ -109,19 +114,27 @@ export function StoreProductPage() {
   }
 
   const image = variant?.previewUrl || product?.previewUrl
+  const category = categories[0]
 
   return (
     <div className="page page--store">
       <SeoHead
-        title={product ? `${product.title} · Store · ${site.shortBrand}` : `Store · ${site.shortBrand}`}
+        title={product ? `${product.title} Â· Store Â· ${site.shortBrand}` : `Store Â· ${site.shortBrand}`}
         description={product?.title ? `${product.title} from Adventures in Southwest Florida, printed to order.` : 'Store product'}
         path={`/store/${productId}`}
         image={image || undefined}
       />
       <p className="store-crumb">
         <Link to="/store">Store</Link>
+        {category && (
+          <>
+            {' / '}
+            <Link to={`/store/category/${category.id}`}>{category.name}</Link>
+          </>
+        )}
+        {product && <span> / {product.title}</span>}
       </p>
-      {loading && !product && <p className="store-status">Loading product…</p>}
+      {loading && !product && <p className="store-status">Loading productâ€¦</p>}
       {error && (
         <p className="store-error">
           {error} <Link to="/store">Back to the store</Link>
@@ -129,45 +142,59 @@ export function StoreProductPage() {
       )}
       {product && (
         <article className="store-product">
-          {image ? (
-            <img className="store-product__photo" src={image} alt={product.title} />
-          ) : (
-            <div className="store-card__fallback store-product__photo">{product.title}</div>
-          )}
-          <div>
-            {product.productType && <p className="eyebrow">{product.productType}</p>}
+          <div className="store-product__stage">
+            {image ? (
+              <img className="store-product__photo" src={image} alt={product.title} />
+            ) : (
+              <div className="store-card__fallback store-product__photo">{product.title}</div>
+            )}
+          </div>
+          <div className="store-buy">
+            {category && <p className="eyebrow">{category.name}</p>}
             <h1>{product.title}</h1>
             <p className="store-product__price">
               {variant?.pricePending && variant.priceCents == null
-                ? 'Pricing…'
+                ? 'Pricingâ€¦'
                 : variant?.priceCents == null
                   ? 'Price unavailable'
                   : formatUsd(variant.priceCents)}
             </p>
-            <p className="store-note">US print price before shipping and tax. Checkout confirms Gelato’s price for your address.</p>
-            {product.description && (
-              <div className="store-copy" dangerouslySetInnerHTML={{ __html: product.description }} />
-            )}
+            <p className="store-note">Print price before shipping and tax. Checkout confirms the price for your address.</p>
             <div className="store-options">
               {product.options.length > 0
                 ? product.options.map((group) => (
-                    <label key={group.name}>
-                      {group.name}
-                      <select
-                        value={selected[group.name] ?? ''}
-                        onChange={(event) => chooseOption(group.name, event.target.value)}
-                      >
-                        {group.values.map((value) => (
-                          <option key={value} value={value}>
-                            {value}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
+                    <fieldset key={group.name}>
+                      <legend>{group.name}</legend>
+                      {group.values.length > 8 ? (
+                        <select
+                          value={selected[group.name] ?? ''}
+                          onChange={(event) => chooseOption(group.name, event.target.value)}
+                        >
+                          {group.values.map((value) => (
+                            <option key={value} value={value}>
+                              {value}
+                            </option>
+                          ))}
+                        </select>
+                      ) : (
+                        <div className="store-pills">
+                          {group.values.map((value) => (
+                            <button
+                              key={value}
+                              type="button"
+                              className={selected[group.name] === value ? 'is-selected' : ''}
+                              onClick={() => chooseOption(group.name, value)}
+                            >
+                              {value}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </fieldset>
                   ))
                 : product.variants.length > 1 && (
-                    <label>
-                      Option
+                    <fieldset>
+                      <legend>Option</legend>
                       <select value={variantId} onChange={(event) => setVariantId(event.target.value)}>
                         {product.variants.map((item) => (
                           <option key={item.id} value={item.id}>
@@ -175,10 +202,13 @@ export function StoreProductPage() {
                           </option>
                         ))}
                       </select>
-                    </label>
+                    </fieldset>
                   )}
+            </div>
+            {!variant && <p className="store-error">That combination is not available.</p>}
+            <div className="store-buy__row">
               <label>
-                Quantity
+                Qty
                 <input
                   type="number"
                   min={1}
@@ -187,22 +217,29 @@ export function StoreProductPage() {
                   onChange={(event) => setQuantity(Math.min(20, Math.max(1, Number(event.target.value) || 1)))}
                 />
               </label>
+              <button
+                type="button"
+                className="btn btn--accent"
+                disabled={!variant || variant.priceCents == null}
+                onClick={addToCart}
+              >
+                Add to cart
+              </button>
             </div>
-            {!variant && <p className="store-error">That combination is not available.</p>}
-            <button
-              type="button"
-              className="btn btn--accent"
-              disabled={!variant || variant.priceCents == null}
-              onClick={addToCart}
-            >
-              Add to cart
-            </button>
             {added && (
               <p className="store-note">
                 Added to cart. <Link to="/store/cart">View cart</Link>
               </p>
             )}
+            <ul className="store-facts">
+              <li>Printed to order</li>
+              <li>Shipping quoted at checkout</li>
+              <li>Tax calculated for your address</li>
+            </ul>
           </div>
+          {product.description && (
+            <div className="store-copy store-product__copy" dangerouslySetInnerHTML={{ __html: product.description }} />
+          )}
         </article>
       )}
     </div>

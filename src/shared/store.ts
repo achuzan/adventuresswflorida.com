@@ -27,6 +27,14 @@ export type StoreProductPublic = {
   productType: string
   options: StoreOptionGroup[]
   variants: StoreVariantPublic[]
+  categoryIds: string[]
+}
+
+export type StoreGroupPublic = {
+  id: string
+  name: string
+  description: string
+  productIds: string[]
 }
 
 export type ShippingOptionPublic = {

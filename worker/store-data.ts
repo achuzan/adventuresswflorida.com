@@ -4,6 +4,7 @@ import { fetchUnitWholesaleCents, mapPool } from './gelato'
 
 const SETTINGS_KEY = 'store:settings'
 const COUPONS_KEY = 'store:coupons'
+const GROUPS_KEY = 'store:groups'
 const CATALOG_KEY = 'store:catalog'
 const PRICE_KEY = 'store:prices'
 const ORDER_INDEX = 'store:order-index'
@@ -14,6 +15,18 @@ export type StoreCoupon = {
   code: string
   percent: number
   active: boolean
+}
+
+export type StoreGroup = {
+  id: string
+  name: string
+  description: string
+  productIds: string[]
+}
+
+export type StoreGroups = {
+  categories: StoreGroup[]
+  collections: StoreGroup[]
 }
 
 export type StoreSettings = {
@@ -162,6 +175,78 @@ export async function getCoupons(kv: KVNamespace): Promise<StoreCoupon[]> {
 export async function saveCoupons(kv: KVNamespace, coupons: StoreCoupon[]) {
   await kv.put(COUPONS_KEY, JSON.stringify(coupons.slice(0, 40)))
   return coupons.slice(0, 40)
+}
+
+function emptyGroups(): StoreGroups {
+  return { categories: [], collections: [] }
+}
+
+function parseGroup(row: unknown): StoreGroup | null {
+  if (!row || typeof row !== 'object') return null
+  const item = row as Partial<StoreGroup>
+  const id = typeof item.id === 'string' ? item.id : ''
+  const name = typeof item.name === 'string' ? item.name.trim() : ''
+  if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(id) || id.length > 40 || name.length < 2) return null
+  const productIds = Array.isArray(item.productIds)
+    ? [...new Set(item.productIds.map(String).filter((productId) => /^[A-Za-z0-9_-]{8,80}$/.test(productId)))].slice(0, 80)
+    : []
+  return {
+    id,
+    name: name.slice(0, 60),
+    description: typeof item.description === 'string' ? item.description.trim().slice(0, 240) : '',
+    productIds,
+  }
+}
+
+export function groupSlug(name: string, existing: string[]) {
+  const base = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40) || 'group'
+  let id = base.length >= 2 ? base : `${base}-shop`
+  let n = 2
+  while (existing.includes(id)) {
+    id = `${base.slice(0, 34)}-${n}`
+    n += 1
+  }
+  return id
+}
+
+export async function getGroups(kv: KVNamespace): Promise<StoreGroups> {
+  const raw = await kv.get(GROUPS_KEY)
+  if (!raw) return emptyGroups()
+  try {
+    const parsed = JSON.parse(raw) as Partial<StoreGroups>
+    const categories = Array.isArray(parsed.categories) ? parsed.categories.flatMap((row) => {
+      const group = parseGroup(row)
+      return group ? [group] : []
+    }).slice(0, 30) : []
+    const collections = Array.isArray(parsed.collections) ? parsed.collections.flatMap((row) => {
+      const group = parseGroup(row)
+      return group ? [group] : []
+    }).slice(0, 30) : []
+    return { categories, collections }
+  } catch {
+    return emptyGroups()
+  }
+}
+
+export async function saveGroups(kv: KVNamespace, groups: StoreGroups) {
+  const next = {
+    categories: groups.categories.slice(0, 30),
+    collections: groups.collections.slice(0, 30),
+  }
+  await kv.put(GROUPS_KEY, JSON.stringify(next))
+  return next
+}
+
+export function assignProduct(groups: StoreGroup[], productId: string, selectedIds: string[]) {
+  const allowed = new Set(selectedIds.filter((id) => groups.some((group) => group.id === id)))
+  return groups.map((group) => ({
+    ...group,
+    productIds: allowed.has(group.id)
+      ? group.productIds.includes(productId)
+        ? group.productIds
+        : [...group.productIds, productId].slice(0, 80)
+      : group.productIds.filter((id) => id !== productId),
+  }))
 }
 
 export async function readCatalog(kv: KVNamespace): Promise<CatalogCache | null> {
