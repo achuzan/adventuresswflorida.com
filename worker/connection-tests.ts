@@ -15,8 +15,8 @@ type StripeCall = {
 }
 
 function keyMode(key: string) {
-  if (key.startsWith('sk_live_') || key.startsWith('pk_live_')) return 'live'
-  if (key.startsWith('sk_test_') || key.startsWith('pk_test_')) return 'test'
+  if (key.startsWith('sk_live_') || key.startsWith('rk_live_') || key.startsWith('pk_live_')) return 'live'
+  if (key.startsWith('sk_test_') || key.startsWith('rk_test_') || key.startsWith('pk_test_')) return 'test'
   return ''
 }
 
@@ -113,17 +113,33 @@ async function testGelatoStore(apiKey: string | undefined, storeIds: string[], t
 async function testStripeSecret(secretKey: string | undefined): Promise<ConnectionCheck> {
   if (!secretKey) return check('stripe', 'Stripe', 'fail', 'Missing STRIPE_SECRET_KEY.')
   const mode = keyMode(secretKey)
-  if (!mode) return check('stripe', 'Stripe', 'fail', 'STRIPE_SECRET_KEY should start with sk_live_ or sk_test_.')
+  if (!mode) {
+    return check('stripe', 'Stripe', 'fail', 'STRIPE_SECRET_KEY should start with rk_live_, rk_test_, sk_live_, or sk_test_.')
+  }
   try {
-    const account = await stripeCall(secretKey, '/account')
-    if (account.status === 401 || account.status === 403) {
-      return check('stripe', 'Stripe', 'fail', 'Stripe rejected the secret key.')
+    const payments = await stripeCall(secretKey, '/payment_intents?limit=1')
+    if (payments.status === 401) return check('stripe', 'Stripe', 'fail', 'Stripe rejected the secret key.')
+    if (payments.status === 403) {
+      return check(
+        'stripe',
+        'Stripe',
+        'fail',
+        `Stripe recognized the ${mode} key, but it cannot read Payment Intents. Edit the restricted key and allow Payment Intents read and write.`,
+      )
     }
-    if (account.status !== 200) return check('stripe', 'Stripe', 'fail', account.message)
+    if (payments.status !== 200) return check('stripe', 'Stripe', 'fail', payments.message)
     const tax = await stripeCall(secretKey, '/tax/settings')
     const taxStatus = typeof tax.data?.status === 'string' ? tax.data.status : ''
     if (tax.status === 200 && taxStatus === 'active') {
       return check('stripe', 'Stripe', 'ok', `Stripe accepted the secret key (${mode} mode), and Stripe Tax is active.`)
+    }
+    if (tax.status === 403) {
+      return check(
+        'stripe',
+        'Stripe',
+        'warn',
+        `Stripe accepted the secret key (${mode} mode). Allow Tax calculations and transactions write, and Tax settings read, on that restricted key.`,
+      )
     }
     return check(
       'stripe',
@@ -184,6 +200,16 @@ async function testWebhook(secretKey: string | undefined, webhookSecret: string 
   }
   try {
     const listed = await stripeCall(secretKey, '/webhook_endpoints?limit=100')
+    if (listed.status === 403) {
+      return check(
+        'stripe-webhook',
+        'Stripe webhook',
+        'warn',
+        saved
+          ? 'The signing secret is saved. Allow Webhook endpoints read on the restricted key to confirm the endpoint from here.'
+          : 'STRIPE_WEBHOOK_SECRET is not set. Checkout still finishes from the order page.',
+      )
+    }
     if (listed.status !== 200) {
       return check('stripe-webhook', 'Stripe webhook', 'fail', listed.message)
     }
