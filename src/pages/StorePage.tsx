@@ -146,6 +146,7 @@ export function StorePage() {
       {home && (
         <>
           <section className="store-hero">
+            <img className="store-hero__photo" src="/photos/alligator.jpg" alt="" />
             <div className="store-hero__copy">
               <p className="store-kicker">Printed to order</p>
               <h1>
@@ -161,21 +162,13 @@ export function StorePage() {
                 <a className="btn btn--accent" href="#store-products">
                   Shop now
                 </a>
-                <a className="btn btn--ghost" href={catalog.collections.length ? '#store-collections' : '#store-products'}>
-                  {catalog.collections.length ? 'Explore collections' : 'See what is for sale'}
+                <a
+                  className="btn btn--ghost"
+                  href={catalog.categories.length ? '#store-categories' : catalog.collections.length ? '#store-collections' : '#store-products'}
+                >
+                  {catalog.categories.length ? 'Explore categories' : catalog.collections.length ? 'Explore collections' : 'Browse products'}
                 </a>
               </div>
-            </div>
-            <div className="store-hero__art" aria-hidden>
-              <span className="store-hero__ring" />
-              <img className="store-hero__photo" src="/photos/alligator.jpg" alt="" />
-              <span className="store-hero__badge">
-                <img src="/brand/logo.png" alt="" />
-                <span>
-                  <strong>Brad Kemp</strong>
-                  Southwest Florida
-                </span>
-              </span>
             </div>
           </section>
 
@@ -279,6 +272,20 @@ export function StorePage() {
         </section>
       )}
 
+      {home && (
+        <section className="store-promo">
+          <img src="/photos/florida-scrub-jay.jpg" alt="" />
+          <div>
+            <p className="store-kicker">From the photographs</p>
+            <h2>Made when you order</h2>
+            <p>Calendars, prints, and mugs, printed for you and shipped to your address.</p>
+            <a className="btn btn--light" href="#store-products">
+              Shop the store
+            </a>
+          </div>
+        </section>
+      )}
+
       <section className="store-section" id="store-products">
         <div className="store-section__head">
           <h2>{heading}</h2>
@@ -325,27 +332,20 @@ export function StorePage() {
                   <Link to={`/store/${product.id}`}>
                     <strong>{product.title}</strong>
                   </Link>
-                  <div className="store-card__row">
-                    <span className="store-card__price">{priceLabel(product)}</span>
-                    {canAdd ? (
-                      <button
-                        type="button"
-                        className="store-card__cart"
-                        aria-label={addedId === product.id ? 'Added to cart' : `Add ${product.title} to cart`}
-                        onClick={() => quickAdd(product)}
-                      >
-                        <CartGlyph />
-                      </button>
-                    ) : (
-                      <Link className="store-card__cart" to={`/store/${product.id}`} aria-label={`Choose options for ${product.title}`}>
-                        <CartGlyph />
-                      </Link>
-                    )}
-                  </div>
+                  <span className="store-card__price">{priceLabel(product)}</span>
+                  {canAdd ? (
+                    <button type="button" className="store-card__add" onClick={() => quickAdd(product)}>
+                      {addedId === product.id ? 'Added to cart' : 'Add to cart'}
+                    </button>
+                  ) : (
+                    <Link className="store-card__add" to={`/store/${product.id}`}>
+                      Choose options
+                    </Link>
+                  )}
                   {addedId === product.id && (
-                    <span className="store-card__added">
-                      Added. <Link to="/store/cart">View cart</Link>
-                    </span>
+                    <Link className="store-card__added" to="/store/cart">
+                      View cart
+                    </Link>
                   )}
                 </div>
               </article>
@@ -354,23 +354,6 @@ export function StorePage() {
         </div>
       </section>
     </div>
-  )
-}
-
-function CartGlyph() {
-  return (
-    <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
-      <path
-        d="M6 6h15l-1.5 9h-12z"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="1.8"
-        strokeLinejoin="round"
-      />
-      <path d="M6 6 5 3H2" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
-      <circle cx="9" cy="20" r="1.3" fill="currentColor" />
-      <circle cx="18" cy="20" r="1.3" fill="currentColor" />
-    </svg>
   )
 }
 
