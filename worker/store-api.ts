@@ -75,7 +75,8 @@ function publishableKey(env: Env) {
 }
 
 function isSellable(product: InternalProduct) {
-  return product.source === 'template' || product.status === 'active' || product.status === ''
+  if (product.variants.length === 0) return false
+  return product.status !== 'publishing' && product.status !== 'publishing_error'
 }
 
 function configuredStoreIds(env: Env, settings: StoreSettings) {

@@ -477,7 +477,11 @@ export function AdminStorePanel() {
                       {product.source} · {product.status || 'active'} · {product.variantCount} option
                       {product.variantCount === 1 ? '' : 's'}
                       {product.productType ? ` · ${product.productType}` : ''}
-                      {product.sellable ? '' : ' · not sellable until Gelato marks it active'}
+                      {product.status === 'publishing'
+                        ? ' · Gelato is still publishing this product'
+                        : product.status === 'publishing_error'
+                          ? ' · Gelato could not publish this product'
+                          : ''}
                     </p>
                     <p>
                       {product.pricePending && product.wholesaleCents == null
