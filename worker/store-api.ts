@@ -1168,27 +1168,43 @@ async function checkout(request: Request, env: Env) {
   await saveOrder(env.PHOTOS_KV, order)
 
   let status = intent.status
+  let detail = ''
   if (status === 'requires_capture') {
     try {
       const done = await finalizeAuthorized(env, order, intent.id)
       status = done.status
+      detail = done.gelatoError || ''
+      if (done.status === 'pending' && env.STRIPE_SECRET_KEY) {
+        const again = await getPaymentIntent(env.STRIPE_SECRET_KEY, intent.id)
+        if (again.status === 'requires_action') status = 'requires_action'
+        else if (again.status !== 'requires_capture') {
+          detail = `The payment stopped at ${again.status}.`
+        }
+      }
     } catch (error) {
       await releaseAuthorization(env, order)
+      const message = error instanceof Error ? error.message : 'The order could not be placed'
       order.status = 'payment_failed'
-      order.gelatoError = 'The order was not placed, so the card was not charged.'
+      order.gelatoError = message
       await saveOrder(env.PHOTOS_KV, order)
-      console.error(error instanceof Error ? error.message : 'The order was not placed')
-      throw new HttpError(400, 'The order was not placed and the card was not charged.')
+      console.error(message)
+      throw new HttpError(400, `The order was not placed and the card was not charged. ${message}`)
     }
   } else if (status === 'succeeded') {
     const done = await releaseUnfinalizedCharge(env, order)
     status = done.status
+    detail = done.gelatoError || 'The payment captured before the order was placed, so it was refunded.'
   } else if (status !== 'requires_action') {
     order.status = 'payment_failed'
-    order.gelatoError = 'The card was not charged.'
+    detail = status ? `The payment stopped at ${status}.` : 'Stripe did not authorize the card.'
+    order.gelatoError = detail
     await saveOrder(env.PHOTOS_KV, order)
     await releaseAuthorization(env, order)
-    throw new HttpError(400, 'The card was not charged and the order was not placed.')
+    throw new HttpError(400, `The order was not placed and the card was not charged. ${detail}`)
+  }
+
+  if (status !== 'fulfilled' && status !== 'paid' && status !== 'requires_action') {
+    console.error(JSON.stringify({ orderId, status, detail }))
   }
 
   return json({
@@ -1196,8 +1212,9 @@ async function checkout(request: Request, env: Env) {
     orderId,
     paymentIntentId: intent.id,
     clientSecret: intent.clientSecret,
-    requiresAction: status === 'requires_action' || intent.status === 'requires_action',
+    requiresAction: status === 'requires_action',
     status,
+    detail,
   })
 }
 

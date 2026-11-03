@@ -9,7 +9,7 @@ export function StoreCartPage() {
   const subtotal = items.reduce((sum, item) => sum + item.unitPriceCents * item.quantity, 0)
 
   return (
-    <div className="page page--narrow">
+    <div className="page page--store page--cart">
       <SeoHead
         title={`Cart · ${site.shortBrand}`}
         description="Your Adventures in Southwest Florida print cart."
@@ -19,54 +19,72 @@ export function StoreCartPage() {
       <header className="page-hero">
         <p className="eyebrow">Store</p>
         <h1>Cart</h1>
+        {items.length > 0 && (
+          <p>
+            {items.length} {items.length === 1 ? 'item' : 'items'}
+          </p>
+        )}
       </header>
       {items.length === 0 ? (
-        <p className="store-status">
-          Your cart is empty. <Link to="/store">Browse the store</Link>
-        </p>
+        <div className="store-cart__empty">
+          <p>Your cart is empty.</p>
+          <Link className="btn btn--accent" to="/store">
+            Browse the store
+          </Link>
+        </div>
       ) : (
-        <>
-          <ul className="store-lines">
+        <div className="store-cart">
+          <ul className="store-cart__items">
             {items.map((item) => (
-              <li key={`${item.productId}:${item.variantId}`} className="store-line">
+              <li key={`${item.productId}:${item.variantId}`}>
                 {item.previewUrl ? <img src={item.previewUrl} alt="" /> : <span className="store-card__fallback" />}
-                <div>
-                  <strong>
-                    <Link to={`/store/${item.productId}`}>{item.title}</Link>
-                  </strong>
-                  <p>{item.variantTitle}</p>
-                  <p>{formatUsd(item.unitPriceCents)}</p>
-                  <label>
-                    Quantity
-                    <input
-                      type="number"
-                      min={1}
-                      max={20}
-                      value={item.quantity}
-                      onChange={(event) =>
-                        setQuantity(item.productId, item.variantId, Number(event.target.value) || 1)
-                      }
-                    />
-                  </label>
-                  <button
-                    type="button"
-                    className="text-link"
-                    onClick={() => removeItem(item.productId, item.variantId)}
-                  >
-                    Remove
-                  </button>
+                <div className="store-cart__body">
+                  <div className="store-cart__top">
+                    <div>
+                      <strong>
+                        <Link to={`/store/${item.productId}`}>{item.title}</Link>
+                      </strong>
+                      {item.variantTitle ? <p>{item.variantTitle}</p> : null}
+                      <p>{formatUsd(item.unitPriceCents)} each</p>
+                    </div>
+                    <strong className="store-cart__line">{formatUsd(item.unitPriceCents * item.quantity)}</strong>
+                  </div>
+                  <div className="store-cart__qty">
+                    <label>
+                      Qty
+                      <input
+                        type="number"
+                        min={1}
+                        max={20}
+                        value={item.quantity}
+                        onChange={(event) =>
+                          setQuantity(item.productId, item.variantId, Number(event.target.value) || 1)
+                        }
+                      />
+                    </label>
+                    <button type="button" onClick={() => removeItem(item.productId, item.variantId)}>
+                      Remove
+                    </button>
+                  </div>
                 </div>
               </li>
             ))}
           </ul>
-          <p className="store-total">
-            Subtotal <strong>{formatUsd(subtotal)}</strong>
-          </p>
-          <p className="store-note">Shipping and tax are calculated at checkout from Gelato and Stripe.</p>
-          <Link className="btn btn--accent" to="/store/checkout">
-            Checkout
-          </Link>
-        </>
+          <aside className="store-cart__summary">
+            <h2>Summary</h2>
+            <p className="store-cart__row">
+              <span>Subtotal</span>
+              <strong>{formatUsd(subtotal)}</strong>
+            </p>
+            <p className="store-note">Shipping and tax are calculated at checkout.</p>
+            <Link className="btn btn--accent" to="/store/checkout">
+              Checkout
+            </Link>
+            <Link className="text-link" to="/store">
+              Continue shopping
+            </Link>
+          </aside>
+        </div>
       )}
     </div>
   )

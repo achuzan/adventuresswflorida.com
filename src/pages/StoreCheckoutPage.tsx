@@ -420,9 +420,10 @@ function PayStep({
       }
       if (!settled) {
         setError(
-          data.status === 'fulfillment_failed'
-            ? 'The print order was accepted, but the card was not charged.'
-            : 'The order was not placed and the card was not charged.',
+          data.detail ||
+            (data.status === 'fulfillment_failed'
+              ? 'The print order was accepted, but the card was not charged.'
+              : 'The order was not placed and the card was not charged.'),
         )
         placing.current = false
         setBusy(false)

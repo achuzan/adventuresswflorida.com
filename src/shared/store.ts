@@ -87,6 +87,7 @@ export type CheckoutResponse = PaymentPreview & {
   clientSecret: string
   requiresAction: boolean
   status: string
+  detail?: string
 }
 
 export type PublicOrder = {
