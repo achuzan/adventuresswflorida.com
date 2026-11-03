@@ -691,6 +691,7 @@ export async function createGelatoOrder(
   email: string,
   shipmentMethodUid: string,
   address: ShippingAddress,
+  storeId: string,
   items: {
     itemReferenceId: string
     productUid: string
@@ -708,6 +709,7 @@ export async function createGelatoOrder(
       orderReferenceId: referenceId,
       customerReferenceId: email.slice(0, 60),
       currency: 'USD',
+      ...(storeId ? { storeId } : {}),
       shipmentMethodUid,
       items: items.map((item) => ({
         itemReferenceId: item.itemReferenceId,

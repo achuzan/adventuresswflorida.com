@@ -621,6 +621,7 @@ async function fulfill(env: Env, order: StoreOrder) {
   await saveOrder(env.PHOTOS_KV, order)
   const locked = await getOrder(env.PHOTOS_KV, order.id)
   if (!locked || locked.fulfillClaim !== claim) return locked ?? order
+  const storeId = configuredStoreIds(env, await getSettings(env.PHOTOS_KV))[0] ?? ''
 
   const errors: string[] = []
   for (const leg of order.legs) {
@@ -649,6 +650,7 @@ async function fulfill(env: Env, order: StoreOrder) {
         order.email,
         leg.shipmentMethodUid,
         order.address,
+        storeId,
         itemsForLeg(order, leg).map((item) => ({
           itemReferenceId: item.itemReferenceId,
           productUid: item.productUid,
@@ -674,6 +676,7 @@ async function fulfill(env: Env, order: StoreOrder) {
       }
       leg.error = message
       errors.push(message)
+      console.error(message)
     }
   }
 
@@ -718,11 +721,9 @@ async function finalizeAuthorized(env: Env, order: StoreOrder, paymentIntentId: 
     sent.placed = false
     sent.fulfillClaim = undefined
     const gelatoText = sent.gelatoError || ''
-    sent.gelatoError = /print file/i.test(gelatoText)
-      ? 'Gelato did not accept the order because this product has no print file to send. The card was not charged.'
-      : gelatoText
-        ? `${gelatoText} The card was not charged.`
-        : 'The print order was not accepted, so the card was not charged.'
+    sent.gelatoError = gelatoText
+      ? `${gelatoText} The card was not charged.`
+      : 'The print order was not accepted, so the card was not charged.'
     await saveOrder(env.PHOTOS_KV, sent)
     return sent
   }
