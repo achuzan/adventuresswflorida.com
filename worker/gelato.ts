@@ -710,6 +710,13 @@ export async function createGelatoOrder(
   return str(data.id)
 }
 
+export async function cancelGelatoOrder(apiKey: string, orderId: string) {
+  await gelato(apiKey, `https://order.gelatoapis.com/v4/orders/${encodeURIComponent(orderId)}:cancel`, {
+    method: 'POST',
+    body: '{}',
+  })
+}
+
 export async function mapPool<T>(items: T[], limit: number, fn: (item: T) => Promise<void>) {
   if (!items.length) return
   let next = 0

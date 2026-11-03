@@ -37,6 +37,9 @@ export type StoreSettings = {
   templateIds: string[]
   enabled: Record<string, boolean>
   openaiKey: string
+  aiBaseUrl: string
+  aiApiKey: string
+  aiModel: string
 }
 
 export type CatalogCache = {
@@ -72,7 +75,7 @@ export type OrderLeg = {
 export type StoreOrder = {
   id: string
   createdAt: string
-  status: 'pending' | 'paid' | 'fulfilled' | 'fulfillment_failed' | 'payment_failed'
+  status: 'pending' | 'paid' | 'fulfilled' | 'fulfillment_failed' | 'payment_failed' | 'canceled'
   email: string
   currency: 'usd'
   items: OrderLine[]
@@ -105,6 +108,9 @@ export function defaultSettings(): StoreSettings {
     templateIds: [],
     enabled: {},
     openaiKey: '',
+    aiBaseUrl: '',
+    aiApiKey: '',
+    aiModel: '',
   }
 }
 
@@ -137,7 +143,10 @@ export async function getSettings(kv: KVNamespace): Promise<StoreSettings> {
       storeId: typeof parsed.storeId === 'string' ? parsed.storeId.trim() : '',
       templateIds,
       enabled,
-      openaiKey: typeof parsed.openaiKey === 'string' ? parsed.openaiKey.trim().slice(0, 200) : '',
+      openaiKey: typeof parsed.openaiKey === 'string' ? parsed.openaiKey.trim().slice(0, 500) : '',
+      aiBaseUrl: typeof parsed.aiBaseUrl === 'string' ? parsed.aiBaseUrl.trim().slice(0, 300) : '',
+      aiApiKey: typeof parsed.aiApiKey === 'string' ? parsed.aiApiKey.trim().slice(0, 500) : '',
+      aiModel: typeof parsed.aiModel === 'string' ? parsed.aiModel.trim().slice(0, 120) : '',
     }
   } catch {
     return base

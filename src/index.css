@@ -28,6 +28,7 @@
 
 html {
   scroll-behavior: smooth;
+  overflow-x: clip;
 }
 
 body {
@@ -1097,9 +1098,13 @@ main {
 
 /* Footer */
 .site-footer {
+  position: relative;
+  z-index: 1;
   margin-top: auto;
   padding: 3rem var(--space) 2rem;
-  background: linear-gradient(180deg, transparent, rgba(30, 77, 69, 0.08));
+  background:
+    linear-gradient(180deg, transparent, rgba(30, 77, 69, 0.08)),
+    #f4f7f6;
   border-top: 1px solid var(--line);
 }
 
@@ -1554,21 +1559,10 @@ main {
 }
 
 .page--store {
-  position: relative;
-  isolation: isolate;
   max-width: calc(var(--max) + 8rem);
 }
 
-.page--store::before {
-  content: '';
-  position: absolute;
-  z-index: -1;
-  left: 50%;
-  width: 100vw;
-  margin-left: -50vw;
-  top: calc(-1 * (var(--header-h) + 2.5rem));
-  bottom: -4rem;
-  pointer-events: none;
+main:has(.page--store) {
   background: #f7f1e8;
 }
 
@@ -1599,10 +1593,9 @@ main {
   background: linear-gradient(
     90deg,
     #f7f1e8 0%,
-    #f7f1e8 34%,
-    rgba(247, 241, 232, 0.92) 46%,
-    rgba(30, 77, 69, 0.2) 64%,
-    rgba(18, 56, 50, 0.05) 100%
+    #f7f1e8 30%,
+    rgba(247, 241, 232, 0.72) 38%,
+    rgba(247, 241, 232, 0) 48%
   );
 }
 
@@ -1940,22 +1933,45 @@ main {
 
 .store-product {
   display: grid;
-  grid-template-columns: 4.6rem minmax(0, 1.15fr) minmax(16.5rem, 22rem);
+  grid-template-columns: minmax(0, 1fr) minmax(16rem, 22rem);
   gap: clamp(0.8rem, 2vw, 1.4rem);
   align-items: start;
+  min-width: 0;
   padding: 1rem;
   background: rgba(255, 255, 255, 0.94);
   border: 1px solid rgba(34, 25, 18, 0.08);
   border-radius: 0.85rem;
 }
 
+.store-gallery {
+  display: grid;
+  grid-template-columns: 4.6rem minmax(0, 1fr);
+  gap: 0.7rem;
+  align-items: start;
+  min-width: 0;
+}
+
+.store-gallery:not(:has(.store-thumbs)) {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.store-gallery:not(:has(.store-thumbs)) .store-product__stage {
+  grid-column: 1;
+}
+
 .store-thumbs {
   display: flex;
   flex-direction: column;
+  grid-column: 1;
+  grid-row: 1;
   gap: 0.45rem;
+  min-width: 0;
 }
 
 .store-thumbs button {
+  width: 4.6rem;
+  height: 4.6rem;
+  flex: 0 0 4.6rem;
   padding: 0;
   border: 2px solid transparent;
   border-radius: 0.35rem;
@@ -1970,7 +1986,7 @@ main {
 
 .store-thumbs img {
   width: 100%;
-  aspect-ratio: 1;
+  height: 100%;
   object-fit: cover;
 }
 
@@ -1981,13 +1997,29 @@ main {
 }
 
 .store-product__stage {
-  background: #fff;
+  grid-column: 2;
+  grid-row: 1;
+  display: grid;
+  place-items: center;
+  min-width: 0;
+  min-height: 28rem;
+  background: #f7f4ef;
   border: 1px solid var(--line);
   border-radius: 0.75rem;
   overflow: hidden;
 }
 
+.store-product__stage .store-product__photo {
+  width: 100%;
+  height: 28rem;
+  max-width: 100%;
+  aspect-ratio: auto;
+  object-fit: contain;
+  background: #f7f4ef;
+}
+
 .store-buy {
+  min-width: 0;
   padding: 1.25rem;
   background: #fff;
   border: 1px solid var(--line);
@@ -2351,15 +2383,45 @@ main {
   padding: 0.9rem;
 }
 
-.store-orders li {
+.store-orders > li {
   display: flex;
   flex-direction: column;
+  align-items: flex-start;
   gap: 0.2rem;
   margin-top: 0.65rem;
   padding: 0.85rem 0.9rem;
   background: #fff;
   border: 1px solid var(--line);
   border-radius: 0.65rem;
+}
+
+.store-order__lines {
+  width: 100%;
+  margin: 0.45rem 0;
+  padding: 0;
+  list-style: none;
+}
+
+.store-order__lines li {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  width: 100%;
+  padding: 0.28rem 0;
+  border-top: 1px solid var(--line);
+}
+
+.store-order__lines small {
+  display: block;
+  color: var(--bark);
+  font-size: 0.86rem;
+}
+
+.store-order__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem 1.1rem;
+  margin-top: 0.45rem;
 }
 
 .store-secrets li {
@@ -2400,8 +2462,29 @@ main {
     grid-template-columns: 1fr;
   }
 
+  .store-gallery,
+  .store-product__stage,
+  .store-thumbs {
+    grid-column: 1;
+    grid-row: auto;
+  }
+
+  .store-gallery,
+  .store-gallery:not(:has(.store-thumbs)) {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
   .store-thumbs {
     flex-direction: row;
+    flex-wrap: wrap;
+  }
+
+  .store-product__stage .store-product__photo {
+    height: 18rem;
+  }
+
+  .store-product__stage {
+    min-height: 18rem;
   }
 
   .store-hero {
@@ -2417,7 +2500,7 @@ main {
   }
 
   .store-hero::after {
-    background: linear-gradient(180deg, rgba(18, 56, 50, 0.05) 0%, #f7f1e8 42%, #f7f1e8 100%);
+    background: linear-gradient(180deg, transparent 0 13rem, #f7f1e8 15.5rem);
   }
 
   .store-perks {

@@ -1,7 +1,16 @@
 import { isAuthenticated } from './auth'
-import { testOpenAiKey, writeProductDescription } from './openai'
+import {
+  defaultAiBaseUrl,
+  fallbackAiModel,
+  normalizeAiBaseUrl,
+  normalizeAiModel,
+  testAiConnection,
+  writeProductDescription,
+  type AiConnection,
+} from './openai'
 import { testConnections } from './connection-tests'
 import {
+  cancelGelatoOrder,
   createGelatoOrder,
   findGelatoOrder,
   GelatoError,
@@ -12,10 +21,12 @@ import {
   type QuotedMethod,
 } from './gelato'
 import {
+  cancelPaymentIntent,
   createPaymentIntent,
   createTaxCalculation,
   createTaxTransaction,
   getPaymentIntent,
+  refundPaymentIntent,
   verifyStripeSignature,
 } from './stripe-api'
 import {
@@ -419,7 +430,7 @@ function publicOrder(order: StoreOrder): PublicOrder {
       ? 'sent'
       : order.status === 'fulfillment_failed'
         ? 'needs_attention'
-        : order.status === 'payment_failed'
+        :     order.status === 'payment_failed' || order.status === 'canceled'
           ? 'payment_failed'
           : order.status === 'paid'
             ? 'sending'
@@ -457,7 +468,7 @@ function itemsForLeg(order: StoreOrder, leg: OrderLeg) {
 }
 
 async function fulfill(env: Env, order: StoreOrder) {
-  if (order.status === 'fulfilled' || order.status === 'payment_failed') return order
+  if (order.status === 'fulfilled' || order.status === 'payment_failed' || order.status === 'canceled') return order
   if (order.legs.length > 0 && order.legs.every((leg) => leg.gelatoOrderId)) {
     order.status = 'fulfilled'
     order.gelatoError = undefined
@@ -545,6 +556,7 @@ async function fulfill(env: Env, order: StoreOrder) {
 }
 
 async function syncFromStripe(env: Env, order: StoreOrder, paymentIntentId: string) {
+  if (order.status === 'canceled') return order
   if (!env.STRIPE_SECRET_KEY) throw new HttpError(503, 'Card payments are not available right now')
   if (order.stripePaymentIntentId && order.stripePaymentIntentId !== paymentIntentId) {
     throw new HttpError(400, 'That payment does not match this order')
@@ -590,6 +602,28 @@ function adminOrder(order: StoreOrder) {
     createdAt: order.createdAt,
     status: order.status,
     email: order.email,
+    phone: order.address.phone,
+    shipTo: {
+      name: `${order.address.firstName} ${order.address.lastName}`.trim(),
+      line1: order.address.line1,
+      line2: order.address.line2,
+      city: order.address.city,
+      state: order.address.state,
+      postalCode: order.address.postalCode,
+      country: order.address.country,
+    },
+    items: order.items.map((item) => ({
+      title: item.title,
+      variantTitle: item.variantTitle,
+      quantity: item.quantity,
+      linePriceCents: item.retailCents,
+    })),
+    shippingLabel: order.shippingLabel,
+    shippingCents: order.shippingRetailCents,
+    subtotalCents: order.subtotalCents,
+    discountCents: order.discountCents ?? 0,
+    couponCode: order.couponCode ?? '',
+    taxCents: order.taxCents,
     totalCents: order.totalCents,
     itemSummary: order.items.map((item) => `${item.quantity}× ${item.title}`).join(', '),
     gelatoOrderIds: order.legs.flatMap((leg) => (leg.gelatoOrderId ? [leg.gelatoOrderId] : [])),
@@ -605,12 +639,15 @@ async function adminPayload(env: Env, refresh: boolean) {
   const prices = env.GELATO_API_KEY ? await ensurePrices(env.PHOTOS_KV, env.GELATO_API_KEY, uids, 10) : new Map()
   const orders = await listOrders(env.PHOTOS_KV, 15)
   const copy = await getCopy(env.PHOTOS_KV)
+  const ai = resolvedAi(env, settings)
   return {
     settings: {
       markupPercent: settings.markupPercent,
       shippingMarkupPercent: settings.shippingMarkupPercent,
       storeId: settings.storeId,
       templateIds: settings.templateIds,
+      aiBaseUrl: settings.aiBaseUrl,
+      aiModel: settings.aiModel,
     },
     notes: env.GELATO_API_KEY
       ? catalog.notes
@@ -623,8 +660,10 @@ async function adminPayload(env: Env, refresh: boolean) {
       stripeSecret: Boolean(env.STRIPE_SECRET_KEY),
       stripePublishable: Boolean(publishableKey(env)),
       stripeWebhook: Boolean(env.STRIPE_WEBHOOK_SECRET),
-      openai: Boolean(env.OPENAI_API_KEY || settings.openaiKey),
-      openaiSource: env.OPENAI_API_KEY ? 'cloudflare' : settings.openaiKey ? 'admin' : 'none',
+      openai: Boolean(ai.connection),
+      openaiSource: settings.aiApiKey || settings.openaiKey ? 'admin' : env.OPENAI_API_KEY ? 'cloudflare' : 'none',
+      aiBaseUrl: ai.baseUrl,
+      aiModel: ai.model,
     },
     products: catalog.products.map((product) => {
       const wholesale = lowestWholesale(product, prices)
@@ -704,6 +743,8 @@ export async function handleStoreRequest(request: Request, env: Env) {
     if (toggle && request.method === 'PATCH') return await adminToggle(request, env, toggle[1]!)
     const sync = /^\/api\/admin\/store\/orders\/(ord_[A-Za-z0-9_-]{8,80})\/sync$/.exec(path)
     if (sync && request.method === 'POST') return await adminSync(request, env, sync[1]!)
+    const cancelOrder = /^\/api\/admin\/store\/orders\/(ord_[A-Za-z0-9_-]{8,80})\/cancel$/.exec(path)
+    if (cancelOrder && request.method === 'POST') return await adminCancel(request, env, cancelOrder[1]!)
     return json({ error: 'Not found' }, 404)
   } catch (error) {
     return caught(error, path.startsWith('/api/admin/'))
@@ -961,17 +1002,17 @@ async function adminTest(request: Request, env: Env) {
   await requireAdmin(request, env)
   const settings = await getSettings(env.PHOTOS_KV)
   const checks = await testConnections(env, settings, configuredStoreIds(env, settings))
-  const openai = env.OPENAI_API_KEY?.trim() || settings.openaiKey
-  if (!openai) {
+  const ai = resolvedAi(env, settings)
+  if (!ai.connection) {
     checks.push({
       id: 'openai',
-      name: 'OpenAI',
+      name: 'AI',
       status: 'warn',
-      detail: 'No OpenAI API key yet. Add one in store settings to write product descriptions.',
+      detail: ai.error,
     })
   } else {
-    const result = await testOpenAiKey(openai)
-    checks.push({ id: 'openai', name: 'OpenAI', status: result.ok ? 'ok' : 'fail', detail: result.detail })
+    const result = await testAiConnection(ai.connection)
+    checks.push({ id: 'openai', name: 'AI', status: result.ok ? 'ok' : 'fail', detail: result.detail })
   }
   return json({ checks })
 }
@@ -1017,13 +1058,34 @@ async function adminSettings(request: Request, env: Env) {
     if (templateIds.length > 50) throw new HttpError(400, 'Paste up to 50 template ids')
     settings.templateIds = templateIds
   }
-  if (body.clearOpenaiKey === true) settings.openaiKey = ''
-  else if (typeof body.openaiKey === 'string' && body.openaiKey.trim()) {
-    const key = body.openaiKey.trim()
-    if (!key.startsWith('sk-') || key.length < 20 || key.length > 200) {
-      throw new HttpError(400, 'The OpenAI key should start with sk-')
+  if ('aiBaseUrl' in body) {
+    const raw = typeof body.aiBaseUrl === 'string' ? body.aiBaseUrl.trim() : ''
+    if (!raw) settings.aiBaseUrl = ''
+    else {
+      const url = normalizeAiBaseUrl(raw)
+      if (!url) throw new HttpError(400, 'The API URL must be an http or https address')
+      settings.aiBaseUrl = url
     }
-    settings.openaiKey = key
+  }
+  if ('aiModel' in body) {
+    const raw = typeof body.aiModel === 'string' ? body.aiModel.trim() : ''
+    if (!raw) settings.aiModel = ''
+    else {
+      const model = normalizeAiModel(raw)
+      if (!model) throw new HttpError(400, 'Use a model name such as gemini-2.5-flash or the name from Open WebUI')
+      settings.aiModel = model
+    }
+  }
+  if (body.clearOpenaiKey === true) {
+    settings.aiApiKey = ''
+    settings.openaiKey = ''
+  } else if (typeof body.aiApiKey === 'string' && body.aiApiKey.trim()) {
+    const key = body.aiApiKey.trim()
+    if (key.length < 8 || key.length > 500 || /\s/.test(key)) {
+      throw new HttpError(400, 'The API key looks incomplete')
+    }
+    settings.aiApiKey = key
+    settings.openaiKey = ''
   }
   await saveSettings(env.PHOTOS_KV, settings)
   return json(await adminPayload(env, false))
@@ -1145,16 +1207,27 @@ async function adminToggle(request: Request, env: Env, id: string) {
   return json({ ok: true, enabled: settings.enabled[id] === true, groups })
 }
 
-function resolvedOpenAiKey(env: Env, settings: StoreSettings) {
-  return env.OPENAI_API_KEY?.trim() || settings.openaiKey
+function resolvedAi(env: Env, settings: StoreSettings): { connection: AiConnection | null; baseUrl: string; model: string; error: string } {
+  const rawUrl = settings.aiBaseUrl || env.AI_BASE_URL?.trim() || defaultAiBaseUrl()
+  const baseUrl = normalizeAiBaseUrl(rawUrl) || ''
+  const apiKey = (settings.aiApiKey || settings.openaiKey || env.OPENAI_API_KEY || '').trim()
+  const model = (settings.aiModel || env.AI_MODEL || '').trim() || (baseUrl ? fallbackAiModel(baseUrl) : '')
+  if (!baseUrl) return { connection: null, baseUrl: '', model, error: 'The API URL must be an http or https address' }
+  if (!apiKey) {
+    return { connection: null, baseUrl, model, error: 'Add an API key in store settings to write product descriptions.' }
+  }
+  if (!model) {
+    return { connection: null, baseUrl, model: '', error: 'Enter the model name from Open WebUI or Gemini.' }
+  }
+  return { connection: { baseUrl, apiKey, model }, baseUrl, model, error: '' }
 }
 
 async function adminDescriptions(request: Request, env: Env) {
   await requireAdmin(request, env)
   const body = (await readJson(request)) as { productId?: unknown }
   const settings = await getSettings(env.PHOTOS_KV)
-  const key = resolvedOpenAiKey(env, settings)
-  if (!key) throw new HttpError(400, 'Add an OpenAI API key in store settings first')
+  const ai = resolvedAi(env, settings)
+  if (!ai.connection) throw new HttpError(400, ai.error)
   const catalog = await loadCatalog(env, false)
   const copy = await getCopy(env.PHOTOS_KV)
   const requested = typeof body.productId === 'string' ? body.productId : ''
@@ -1164,13 +1237,60 @@ async function adminDescriptions(request: Request, env: Env) {
   if (requested && !targets.length) return json({ error: 'That product is not in the Gelato catalog' }, 404)
   const updated: { id: string; title: string; description: string }[] = []
   for (const product of targets) {
-    const description = await writeProductDescription(key, product)
+    const description = await writeProductDescription(ai.connection, product)
     copy[product.id] = { description, source: 'openai', updatedAt: new Date().toISOString() }
     updated.push({ id: product.id, title: product.title, description })
   }
   if (updated.length) await saveCopy(env.PHOTOS_KV, copy)
   const remaining = catalog.products.filter((product) => !copy[product.id]).length
   return json({ updated, remaining })
+}
+
+async function adminCancel(request: Request, env: Env, orderId: string) {
+  await requireAdmin(request, env)
+  const order = await getOrder(env.PHOTOS_KV, orderId)
+  if (!order) return json({ error: 'Order not found' }, 404)
+  if (order.status === 'canceled') return json({ order: adminOrder(order) })
+  const gelatoIds = order.legs.flatMap((leg) => (leg.gelatoOrderId ? [leg.gelatoOrderId] : []))
+  if (gelatoIds.length) {
+    if (!env.GELATO_API_KEY) throw new HttpError(503, 'Gelato is not connected, so this print order cannot be canceled')
+    for (const gelatoId of gelatoIds) {
+      try {
+        await cancelGelatoOrder(env.GELATO_API_KEY, gelatoId)
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Gelato could not cancel the order'
+        if (!/already|cancel+ed|not found/i.test(message)) {
+          throw new HttpError(400, `Gelato did not cancel ${gelatoId}. ${message}`)
+        }
+      }
+    }
+  }
+  if (order.stripePaymentIntentId) {
+    if (!env.STRIPE_SECRET_KEY) throw new HttpError(503, 'Stripe is not connected, so this order cannot be canceled safely')
+    const intent = await getPaymentIntent(env.STRIPE_SECRET_KEY, order.stripePaymentIntentId)
+    if (intent.metadata.orderId && intent.metadata.orderId !== order.id) {
+      throw new HttpError(400, 'That payment does not match this order')
+    }
+    if (intent.status === 'succeeded') {
+      try {
+        await refundPaymentIntent(env.STRIPE_SECRET_KEY, intent.id)
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Stripe could not refund the payment'
+        if (!/already been refunded|has already been refunded/i.test(message)) throw new HttpError(400, message)
+      }
+    } else if (intent.status !== 'canceled') {
+      try {
+        await cancelPaymentIntent(env.STRIPE_SECRET_KEY, intent.id)
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Stripe could not cancel the payment'
+        if (!/canceled|cancelled/i.test(message)) throw new HttpError(400, message)
+      }
+    }
+  }
+  order.status = 'canceled'
+  order.fulfillClaim = undefined
+  await saveOrder(env.PHOTOS_KV, order)
+  return json({ order: adminOrder(order) })
 }
 
 async function adminSync(request: Request, env: Env, orderId: string) {

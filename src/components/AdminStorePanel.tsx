@@ -27,6 +27,23 @@ type AdminOrder = {
   createdAt: string
   status: string
   email: string
+  phone: string
+  shipTo: {
+    name: string
+    line1: string
+    line2: string
+    city: string
+    state: string
+    postalCode: string
+    country: string
+  }
+  items: { title: string; variantTitle: string; quantity: number; linePriceCents: number }[]
+  shippingLabel: string
+  shippingCents: number
+  subtotalCents: number
+  discountCents: number
+  couponCode: string
+  taxCents: number
   totalCents: number
   itemSummary: string
   gelatoOrderIds: string[]
@@ -60,6 +77,8 @@ type AdminStore = {
     shippingMarkupPercent: number
     storeId: string
     templateIds: string[]
+    aiBaseUrl: string
+    aiModel: string
   }
   notes: string[]
   fetchedAt: string
@@ -72,6 +91,8 @@ type AdminStore = {
     stripeWebhook: boolean
     openai: boolean
     openaiSource: 'cloudflare' | 'admin' | 'none'
+    aiBaseUrl: string
+    aiModel: string
   }
   products: AdminProduct[]
   orders: AdminOrder[]
@@ -93,7 +114,9 @@ export function AdminStorePanel() {
   const [categoryName, setCategoryName] = useState('')
   const [collectionName, setCollectionName] = useState('')
   const [section, setSection] = useState<'products' | 'catalog' | 'coupons' | 'orders' | 'settings'>('products')
-  const [openaiKey, setOpenaiKey] = useState('')
+  const [aiBaseUrl, setAiBaseUrl] = useState('')
+  const [aiModel, setAiModel] = useState('')
+  const [aiApiKey, setAiApiKey] = useState('')
   const [clearOpenai, setClearOpenai] = useState(false)
   const [drafts, setDrafts] = useState<Record<string, string>>({})
 
@@ -129,6 +152,8 @@ export function AdminStorePanel() {
       setShippingMarkup(String(payload.settings.shippingMarkupPercent))
       setStoreId(payload.settings.storeId)
       setTemplateIds(payload.settings.templateIds.join('\n'))
+      setAiBaseUrl(payload.settings.aiBaseUrl)
+      setAiModel(payload.settings.aiModel)
     }
     return payload
   }
@@ -182,12 +207,16 @@ export function AdminStorePanel() {
         shippingMarkupPercent: Number(shippingMarkup),
         storeId,
         templateIds,
-        ...(openaiKey.trim() ? { openaiKey } : {}),
+        aiBaseUrl,
+        aiModel,
+        ...(aiApiKey.trim() ? { aiApiKey } : {}),
         ...(clearOpenai ? { clearOpenaiKey: true } : {}),
       }),
     })
     setData(payload)
-    setOpenaiKey('')
+    setAiBaseUrl(payload.settings.aiBaseUrl)
+    setAiModel(payload.settings.aiModel)
+    setAiApiKey('')
     setClearOpenai(false)
   }
 
@@ -501,6 +530,34 @@ export function AdminStorePanel() {
     }
   }
 
+  async function cancelOrder(order: AdminOrder) {
+    const refund = order.status === 'paid' || order.status === 'fulfilled' || order.status === 'fulfillment_failed'
+    const confirmed = window.confirm(
+      refund
+        ? 'Cancel this order? A completed card payment is refunded, and Gelato is asked to stop the print.'
+        : 'Cancel this order? The card payment will be stopped if it has not been completed.',
+    )
+    if (!confirmed) return
+    setBusy(true)
+    setError(null)
+    try {
+      const payload = await storeJson<{ order: AdminOrder }>(
+        `/api/admin/store/orders/${encodeURIComponent(order.id)}/cancel`,
+        { method: 'POST', credentials: 'same-origin' },
+      )
+      setData((current) =>
+        current
+          ? { ...current, orders: current.orders.map((item) => (item.id === payload.order.id ? payload.order : item)) }
+          : current,
+      )
+      setNotice(`Canceled order ${payload.order.id}`)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not cancel that order')
+    } finally {
+      setBusy(false)
+    }
+  }
+
   return (
     <section className="admin-card store-admin">
       <div className="store-admin__head">
@@ -602,7 +659,7 @@ export function AdminStorePanel() {
                         </label>
                         <p className="admin-hint">
                           {product.descriptionSource === 'openai'
-                            ? 'Written with OpenAI. You can edit it.'
+                            ? 'Written with the connected AI. You can edit it.'
                             : product.descriptionSource === 'edited'
                               ? 'Edited in this admin.'
                               : 'Showing the Gelato description.'}
@@ -613,7 +670,7 @@ export function AdminStorePanel() {
                             Save description
                           </button>
                           <button type="button" className="text-link" disabled={busy} onClick={() => void writeDescriptions(product.id)}>
-                            Rewrite with OpenAI
+                            Rewrite description
                           </button>
                         </div>
                         {(groups.categories.length > 0 || groups.collections.length > 0) && (
@@ -809,14 +866,56 @@ export function AdminStorePanel() {
                     <li key={order.id}>
                       <strong>{order.status.replaceAll('_', ' ')}</strong>
                       <span>{new Date(order.createdAt).toLocaleString()}</span>
-                      <span>{order.email}</span>
-                      <span>{formatUsd(order.totalCents)}</span>
-                      <span>{order.itemSummary}</span>
+                      <span>{order.email}{order.phone ? ` · ${order.phone}` : ''}</span>
+                      <span>
+                        Ship to {order.shipTo.name}, {order.shipTo.line1}
+                        {order.shipTo.line2 ? `, ${order.shipTo.line2}` : ''}, {order.shipTo.city}
+                        {order.shipTo.state ? `, ${order.shipTo.state}` : ''} {order.shipTo.postalCode}, {order.shipTo.country}
+                      </span>
+                      <ul className="store-order__lines">
+                        {order.items.map((item, index) => (
+                          <li key={`${item.title}-${index}`}>
+                            <span>
+                              {item.quantity}× {item.title}
+                              {item.variantTitle ? <small>{item.variantTitle}</small> : null}
+                            </span>
+                            <span>{formatUsd(item.linePriceCents)}</span>
+                          </li>
+                        ))}
+                        <li>
+                          <span>{order.shippingLabel || 'Shipping'}</span>
+                          <span>{formatUsd(order.shippingCents)}</span>
+                        </li>
+                        {order.discountCents > 0 && (
+                          <li>
+                            <span>Coupon {order.couponCode}</span>
+                            <span>{formatUsd(-order.discountCents)}</span>
+                          </li>
+                        )}
+                        <li>
+                          <span>Tax</span>
+                          <span>{formatUsd(order.taxCents)}</span>
+                        </li>
+                        <li>
+                          <span>Total</span>
+                          <strong>{formatUsd(order.totalCents)}</strong>
+                        </li>
+                      </ul>
+                      {order.stripePaymentIntentId && <span>Stripe {order.stripePaymentIntentId}</span>}
                       {order.gelatoOrderIds.length > 0 && <span>Gelato {order.gelatoOrderIds.join(', ')}</span>}
                       {order.gelatoError && <span className="admin-error">{order.gelatoError}</span>}
-                      <button type="button" className="text-link" disabled={busy} onClick={() => void sync(order)}>
-                        Sync payment and send to Gelato
-                      </button>
+                      <div className="store-order__actions">
+                        {order.status !== 'canceled' && order.status !== 'fulfilled' && (
+                          <button type="button" className="text-link" disabled={busy} onClick={() => void sync(order)}>
+                            Sync payment and send to Gelato
+                          </button>
+                        )}
+                        {order.status !== 'canceled' && (
+                          <button type="button" className="text-link" disabled={busy} onClick={() => void cancelOrder(order)}>
+                            Cancel order
+                          </button>
+                        )}
+                      </div>
                     </li>
                   ))}
                 </ul>
@@ -843,10 +942,8 @@ export function AdminStorePanel() {
                 </li>
                 <li>
                   {data.secrets.openai
-                    ? data.secrets.openaiSource === 'cloudflare'
-                      ? 'OpenAI key is set as a Cloudflare secret'
-                      : 'OpenAI key is saved in store settings'
-                    : 'OpenAI is not connected yet'}
+                    ? `${data.secrets.openaiSource === 'cloudflare' ? 'API key is set as a Cloudflare secret' : 'API key is saved here'}. ${data.secrets.aiBaseUrl} · ${data.secrets.aiModel || 'model not set'}`
+                    : 'AI is not connected yet'}
                 </li>
               </ul>
               <div className="store-actions">
@@ -885,22 +982,41 @@ export function AdminStorePanel() {
                   />
                 </label>
                 <label className="admin-span-2">
-                  OpenAI API key
+                  AI API URL
+                  <input
+                    value={aiBaseUrl}
+                    onChange={(event) => setAiBaseUrl(event.target.value)}
+                    placeholder="https://your-open-webui-host/api"
+                    autoComplete="off"
+                  />
+                </label>
+                <label className="admin-span-2">
+                  Model
+                  <input
+                    value={aiModel}
+                    onChange={(event) => setAiModel(event.target.value)}
+                    placeholder="gemini-2.5-flash"
+                    autoComplete="off"
+                  />
+                </label>
+                <label className="admin-span-2">
+                  API key
                   <input
                     type="password"
-                    value={openaiKey}
-                    onChange={(event) => setOpenaiKey(event.target.value)}
-                    placeholder={data.secrets.openai ? 'A key is already saved' : 'sk-...'}
+                    value={aiApiKey}
+                    onChange={(event) => setAiApiKey(event.target.value)}
+                    placeholder={data.secrets.openai ? 'A key is already saved' : 'Paste the API key'}
                     autoComplete="off"
                   />
                 </label>
                 <label className="admin-check admin-span-2">
                   <input type="checkbox" checked={clearOpenai} onChange={(event) => setClearOpenai(event.target.checked)} />
-                  Remove the saved OpenAI key
+                  Remove the saved API key
                 </label>
                 <p className="admin-hint admin-span-2">
-                  OpenAI rewrites Gelato’s description using the product name, options, and preview image. A Cloudflare
-                  secret named OPENAI_API_KEY is used first if it is set. The key is not shown again after you save it.
+                  Open WebUI uses the address ending in /api and the model name shown in that instance. Gemini uses
+                  https://generativelanguage.googleapis.com/v1beta/openai and a model such as gemini-2.5-flash. The
+                  address has to be reachable from the internet. The key is not shown again after you save it.
                 </p>
                 <label className="admin-span-2">
                   Template ids

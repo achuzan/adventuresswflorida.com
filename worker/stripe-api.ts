@@ -125,6 +125,16 @@ export async function createPaymentIntent(
   return { id, clientSecret }
 }
 
+export async function cancelPaymentIntent(secretKey: string, id: string) {
+  await stripeRequest(secretKey, `/payment_intents/${encodeURIComponent(id)}/cancel`, new URLSearchParams())
+}
+
+export async function refundPaymentIntent(secretKey: string, id: string) {
+  const params = new URLSearchParams()
+  params.set('payment_intent', id)
+  await stripeRequest(secretKey, '/refunds', params, `refund-${id}`)
+}
+
 export async function getPaymentIntent(secretKey: string, id: string): Promise<StripePaymentIntent> {
   const data = await stripeRequest(secretKey, `/payment_intents/${encodeURIComponent(id)}`)
   const metadata = data.metadata

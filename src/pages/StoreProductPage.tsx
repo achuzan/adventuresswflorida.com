@@ -152,26 +152,28 @@ export function StoreProductPage() {
       )}
       {product && (
         <article className="store-product">
-          {images.length > 1 && (
-            <div className="store-thumbs" aria-label="Product images">
-              {images.map((src) => (
-                <button
-                  key={src}
-                  type="button"
-                  className={src === image ? 'is-selected' : ''}
-                  onClick={() => setActiveImage(src)}
-                >
-                  <img src={src} alt="" />
-                </button>
-              ))}
-            </div>
-          )}
-          <div className="store-product__stage">
-            {image ? (
-              <img className="store-product__photo" src={image} alt={product.title} />
-            ) : (
-              <div className="store-card__fallback store-product__photo">{product.title}</div>
+          <div className="store-gallery">
+            {images.length > 1 && (
+              <div className="store-thumbs" aria-label="Product images">
+                {images.map((src) => (
+                  <button
+                    key={src}
+                    type="button"
+                    className={src === image ? 'is-selected' : ''}
+                    onClick={() => setActiveImage(src)}
+                  >
+                    <img src={src} alt="" />
+                  </button>
+                ))}
+              </div>
             )}
+            <div className="store-product__stage">
+              {image ? (
+                <img className="store-product__photo" src={image} alt={product.title} />
+              ) : (
+                <div className="store-card__fallback store-product__photo">{product.title}</div>
+              )}
+            </div>
           </div>
           <div className="store-buy">
             {category && <p className="store-kicker">{category.name}</p>}
