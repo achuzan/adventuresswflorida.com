@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from 'react'
+import { useRef, useState, type FormEvent } from 'react'
 import { Link } from 'react-router-dom'
 import { loadStripe, type Stripe } from '@stripe/stripe-js'
 import { Elements, PaymentElement, useElements, useStripe } from '@stripe/react-stripe-js'
@@ -12,6 +12,8 @@ import {
   usStates,
   validateAddress,
   type CheckoutResponse,
+  type PaymentPreview,
+  type PublicOrder,
   type QuoteLinePublic,
   type QuoteResponse,
   type ShippingAddress,
@@ -66,14 +68,14 @@ export function StoreCheckoutPage() {
   const [quote, setQuote] = useState<QuoteResponse | null>(null)
   const [shippingOptionId, setShippingOptionId] = useState('')
   const [coupon, setCoupon] = useState('')
-  const [payment, setPayment] = useState<CheckoutResponse | null>(null)
+  const [preview, setPreview] = useState<PaymentPreview | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
 
   function updateAddress(patch: Partial<ShippingAddress>) {
     setAddress((current) => ({ ...current, ...patch }))
     setQuote(null)
-    setPayment(null)
+    setPreview(null)
     setShippingOptionId('')
   }
 
@@ -110,7 +112,7 @@ export function StoreCheckoutPage() {
     setBusy(true)
     setError(null)
     try {
-      const data = await storeJson<CheckoutResponse>('/api/store/checkout', {
+      const data = await storeJson<PaymentPreview>('/api/store/review', {
         method: 'POST',
         body: JSON.stringify({
           lines: cartLines(items),
@@ -119,7 +121,7 @@ export function StoreCheckoutPage() {
           coupon,
         }),
       })
-      setPayment(data)
+      setPreview(data)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not start payment')
     } finally {
@@ -138,19 +140,32 @@ export function StoreCheckoutPage() {
       <header className="page-hero">
         <p className="eyebrow">Store</p>
         <h1>Checkout</h1>
-        <p>Shipping comes from Gelato. Tax comes from Stripe. Card details stay with Stripe and are not stored here.</p>
+        <p>Review the total, then place the order. The card is charged only after the print order is accepted.</p>
       </header>
 
-      {items.length === 0 && !payment ? (
+      {items.length === 0 && !preview ? (
         <p className="store-status">
           Your cart is empty. <Link to="/store">Browse the store</Link>
         </p>
-      ) : payment ? (
-        <Elements stripe={stripeFor(payment.publishableKey)} options={{ clientSecret: payment.clientSecret, appearance }}>
+      ) : preview ? (
+        <Elements
+          stripe={stripeFor(preview.publishableKey)}
+          options={{
+            mode: 'payment',
+            amount: preview.totalCents,
+            currency: 'usd',
+            captureMethod: 'manual',
+            appearance,
+          }}
+        >
           <PayStep
-            payment={payment}
+            preview={preview}
+            lines={cartLines(items)}
+            address={address}
+            shippingOptionId={shippingOptionId}
+            coupon={coupon}
             onEdit={() => {
-              setPayment(null)
+              setPreview(null)
               setQuote(null)
             }}
           />
@@ -226,7 +241,7 @@ export function StoreCheckoutPage() {
               onChange={(event) => {
                 setCoupon(event.target.value)
                 setQuote(null)
-                setPayment(null)
+                setPreview(null)
                 setShippingOptionId('')
               }}
             />
@@ -294,76 +309,171 @@ function SummaryLine({ line }: { line: QuoteLinePublic }) {
   )
 }
 
-function PayStep({ payment, onEdit }: { payment: CheckoutResponse; onEdit: () => void }) {
+function PayStep({
+  preview,
+  lines,
+  address,
+  shippingOptionId,
+  coupon,
+  onEdit,
+}: {
+  preview: PaymentPreview
+  lines: { productId: string; variantId: string; quantity: number }[]
+  address: ShippingAddress
+  shippingOptionId: string
+  coupon: string
+  onEdit: () => void
+}) {
   const stripe = useStripe()
   const elements = useElements()
+  const placing = useRef(false)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
 
-  async function pay(event: FormEvent) {
+  async function placeOrder(event: FormEvent) {
     event.preventDefault()
-    if (!stripe || !elements) return
+    if (!stripe || !elements || placing.current) return
+    placing.current = true
     setBusy(true)
     setError(null)
-    const result = await stripe.confirmPayment({
-      elements,
-      redirect: 'if_required',
-      confirmParams: {
-        return_url: `${window.location.origin}/store/order/${payment.orderId}`,
-      },
-    })
-    if (result.error) {
-      setError(result.error.message || 'Payment failed')
+    const submitted = await elements.submit()
+    if (submitted.error) {
+      setError(submitted.error.message || 'Check the payment details')
+      placing.current = false
       setBusy(false)
       return
     }
-    if (result.paymentIntent?.status === 'succeeded' || result.paymentIntent?.status === 'processing') {
-      window.location.assign(
-        `/store/order/${payment.orderId}?payment_intent=${result.paymentIntent.id}`,
-      )
-      return
+
+    const stripeActions = stripe as Stripe & {
+      createConfirmationToken?: (options: { elements: NonNullable<typeof elements> }) => Promise<{
+        error?: { message?: string }
+        confirmationToken?: { id: string }
+      }>
+      handleNextAction?: (options: { clientSecret: string }) => Promise<{
+        error?: { message?: string }
+        paymentIntent?: { id: string; status: string }
+      }>
     }
-    setError('Payment was not completed')
-    setBusy(false)
+    let confirmationToken = ''
+    let paymentMethodId = ''
+    if (stripeActions.createConfirmationToken) {
+      const created = await stripeActions.createConfirmationToken({ elements })
+      if (created.error || !created.confirmationToken) {
+        setError(created.error?.message || 'The card was not charged and the order was not placed.')
+        placing.current = false
+        setBusy(false)
+        return
+      }
+      confirmationToken = created.confirmationToken.id
+    } else {
+      const created = await stripe.createPaymentMethod({ elements })
+      if (created.error || !created.paymentMethod) {
+        setError(created.error?.message || 'The card was not charged and the order was not placed.')
+        placing.current = false
+        setBusy(false)
+        return
+      }
+      paymentMethodId = created.paymentMethod.id
+    }
+
+    try {
+      const data = await storeJson<CheckoutResponse>('/api/store/checkout', {
+        method: 'POST',
+        body: JSON.stringify({
+          lines,
+          address,
+          shippingOptionId,
+          coupon,
+          totalCents: preview.totalCents,
+          confirmationToken,
+          paymentMethodId,
+        }),
+      })
+      let paymentIntentId = data.paymentIntentId
+      let settled = data.status === 'fulfilled' || data.status === 'paid'
+      if (data.requiresAction) {
+        const next = stripeActions.handleNextAction
+          ? await stripeActions.handleNextAction({ clientSecret: data.clientSecret })
+          : await stripe.confirmCardPayment(data.clientSecret)
+        if (next.error || next.paymentIntent?.status !== 'requires_capture' || !next.paymentIntent.id) {
+          setError('The bank did not authorize the card. The order was not placed and the card was not charged.')
+          placing.current = false
+          setBusy(false)
+          return
+        }
+        paymentIntentId = next.paymentIntent.id
+        const finalized = await storeJson<{ order: PublicOrder }>(
+          `/api/store/orders/${encodeURIComponent(data.orderId)}/finalize`,
+          { method: 'POST', body: JSON.stringify({ paymentIntentId }) },
+        )
+        settled = finalized.order.printStatus === 'sent' || finalized.order.printStatus === 'sending'
+        if (!settled) {
+          setError(
+            finalized.order.notice === 'refunded_unfinalized'
+              ? 'The order was not placed. If a charge appeared, it has been refunded.'
+              : 'The order was not placed and the card was not charged.',
+          )
+          placing.current = false
+          setBusy(false)
+          return
+        }
+      }
+      if (!settled) {
+        setError(
+          data.status === 'fulfillment_failed'
+            ? 'The print order was accepted, but the card was not charged.'
+            : 'The order was not placed and the card was not charged.',
+        )
+        placing.current = false
+        setBusy(false)
+        return
+      }
+      window.location.assign(`/store/order/${data.orderId}?payment_intent=${paymentIntentId}`)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'The order was not placed and the card was not charged.')
+      placing.current = false
+      setBusy(false)
+    }
   }
 
   return (
-    <form className="store-form" onSubmit={(event) => void pay(event)}>
+    <form className="store-form" onSubmit={(event) => void placeOrder(event)}>
       <ul className="store-summary">
-        {payment.lines.map((line) => (
+        {preview.lines.map((line) => (
           <SummaryLine key={`${line.productId}:${line.variantId}`} line={line} />
         ))}
         <li>
-          <span>{payment.shippingLabel}</span>
-          <span>{formatUsd(payment.shippingCents)}</span>
+          <span>{preview.shippingLabel}</span>
+          <span>{formatUsd(preview.shippingCents)}</span>
         </li>
-        {payment.coupon && (
+        {preview.coupon && (
           <li>
             <span>
-              Coupon {payment.coupon.code} ({payment.coupon.percent}% of the markup)
+              Coupon {preview.coupon.code} ({preview.coupon.percent}% of the markup)
             </span>
-            <span>{formatUsd(-payment.discountCents)}</span>
+            <span>{formatUsd(-preview.discountCents)}</span>
           </li>
         )}
         <li>
           <span>Tax</span>
-          <span>{formatUsd(payment.taxCents)}</span>
+          <span>{formatUsd(preview.taxCents)}</span>
         </li>
         <li>
           <span>Total</span>
-          <strong>{formatUsd(payment.totalCents)}</strong>
+          <strong>{formatUsd(preview.totalCents)}</strong>
         </li>
       </ul>
       <PaymentElement />
       {error && <p className="store-error">{error}</p>}
       <div className="store-actions">
-        <button className="btn btn--accent" type="submit" disabled={!stripe || busy}>
-          {busy ? 'Paying…' : `Pay ${formatUsd(payment.totalCents)}`}
+        <button className="btn btn--accent" type="submit" disabled={!stripe || !elements || busy}>
+          {busy ? 'Placing order…' : `Place order · ${formatUsd(preview.totalCents)}`}
         </button>
-        <button type="button" className="text-link" onClick={onEdit}>
+        <button type="button" className="text-link" onClick={onEdit} disabled={busy}>
           Edit address
         </button>
       </div>
+      <p className="store-note">Nothing is charged until you place the order. If the print order is not accepted, the card is not charged.</p>
     </form>
   )
 }

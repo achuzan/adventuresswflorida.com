@@ -90,6 +90,9 @@ export async function createPaymentIntent(
     orderId: string
     email: string
     idempotencyKey: string
+    confirmationToken?: string
+    paymentMethodId?: string
+    returnUrl?: string
     address: {
       firstName: string
       lastName: string
@@ -105,6 +108,7 @@ export async function createPaymentIntent(
   const params = new URLSearchParams()
   params.set('amount', String(input.amount))
   params.set('currency', 'usd')
+  params.set('capture_method', 'manual')
   params.set('automatic_payment_methods[enabled]', 'true')
   params.set('receipt_email', input.email)
   params.set('description', `Adventures SW Florida ${input.orderId}`.slice(0, 200))
@@ -116,13 +120,23 @@ export async function createPaymentIntent(
   if (input.address.state) params.set('shipping[address][state]', input.address.state)
   params.set('shipping[address][postal_code]', input.address.postalCode)
   params.set('shipping[address][country]', input.address.country)
+  if (input.confirmationToken) params.set('confirmation_token', input.confirmationToken)
+  if (input.paymentMethodId) params.set('payment_method', input.paymentMethodId)
+  if (input.confirmationToken || input.paymentMethodId) {
+    params.set('confirm', 'true')
+    if (input.returnUrl) params.set('return_url', input.returnUrl)
+  }
   const data = await stripeRequest(secretKey, '/payment_intents', params, input.idempotencyKey)
   const id = data.id
   const clientSecret = data.client_secret
   if (typeof id !== 'string' || typeof clientSecret !== 'string') {
     throw new Error('Stripe did not return a payment')
   }
-  return { id, clientSecret }
+  return { id, clientSecret, status: String(data.status ?? '') }
+}
+
+export async function capturePaymentIntent(secretKey: string, id: string) {
+  await stripeRequest(secretKey, `/payment_intents/${encodeURIComponent(id)}/capture`, new URLSearchParams(), `capture-${id}`)
 }
 
 export async function cancelPaymentIntent(secretKey: string, id: string) {

@@ -56,15 +56,17 @@ export function StoreOrderPage() {
   }, [orderId, paymentIntent, clear])
 
   const headline =
-    order?.printStatus === 'sent'
-      ? 'Order sent to print'
-      : order?.printStatus === 'needs_attention'
-        ? 'Payment received'
-        : order?.printStatus === 'payment_failed'
-          ? 'Payment did not go through'
-          : order
-            ? 'Payment received'
-            : 'Confirming payment'
+    order?.notice === 'refunded_unfinalized' || order?.notice === 'charged_not_placed'
+      ? 'Order not placed'
+      : order?.printStatus === 'sent'
+        ? 'Order sent to print'
+        : order?.printStatus === 'needs_attention'
+          ? 'Order needs attention'
+          : order?.printStatus === 'payment_failed'
+            ? 'Order not placed'
+            : order
+              ? 'Finishing the order'
+              : 'Checking the order'
 
   return (
     <div className="page page--narrow">
@@ -78,12 +80,20 @@ export function StoreOrderPage() {
         <p className="eyebrow">Store</p>
         <h1>{headline}</h1>
       </header>
-      {!order && !error && <p className="store-status">Confirming the payment and sending the order to Gelato…</p>}
+      {!order && !error && <p className="store-status">Checking that the order was placed…</p>}
       {error && <p className="store-error">{error}</p>}
       {order && (
         <>
-          {order.printStatus === 'sending' && (
-            <p>Your card payment succeeded. The print order is being sent to Gelato.</p>
+          {order.notice === 'refunded_unfinalized' && (
+            <p>This order was not placed and nothing was sent to print. If your card was charged, that payment has been refunded.</p>
+          )}
+          {order.notice === 'charged_not_placed' && (
+            <p>
+              This order was not placed and nothing was sent to print. A charge still needs a refund. Email {site.email}.
+            </p>
+          )}
+          {!order.notice && order.printStatus === 'sending' && (
+            <p>The order is being placed. The card is charged only after the print order is accepted.</p>
           )}
           {order.printStatus === 'sent' && (
             <p>
@@ -91,14 +101,12 @@ export function StoreOrderPage() {
               {order.minDeliveryDays ? `, usually within ${deliveryLabel(order.minDeliveryDays, order.maxDeliveryDays)}` : ''}.
             </p>
           )}
-          {order.printStatus === 'needs_attention' && (
-            <p>
-              Your payment succeeded. The print order still needs a moment on our side, and we’ll follow up at {order.email}.
-            </p>
+          {!order.notice && order.printStatus === 'needs_attention' && (
+            <p>The print order needs a moment on our side. We’ll follow up at {order.email}.</p>
           )}
-          {order.printStatus === 'payment_failed' && (
+          {!order.notice && order.printStatus === 'payment_failed' && (
             <p>
-              The payment was not completed. <Link to="/store/checkout">Return to checkout</Link>
+              The order was not placed and the card was not charged. <Link to="/store/checkout">Return to checkout</Link>
             </p>
           )}
           <ul className="store-summary">

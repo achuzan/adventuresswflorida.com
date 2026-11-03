@@ -22,6 +22,7 @@ import {
 } from './gelato'
 import {
   cancelPaymentIntent,
+  capturePaymentIntent,
   createPaymentIntent,
   createTaxCalculation,
   createTaxTransaction,
@@ -47,6 +48,7 @@ import {
   readCatalog,
   saveOrder,
   saveSettings,
+  siteImagePath,
   writeCatalog,
   type OrderLeg,
   type ProductCopy,
@@ -457,7 +459,72 @@ function publicOrder(order: StoreOrder): PublicOrder {
     maxDeliveryDays: order.maxDeliveryDays,
     city: order.address.city,
     country: order.address.country,
+    notice: orderNotice(order),
   }
+}
+
+function orderNotice(order: StoreOrder): PublicOrder['notice'] {
+  const text = order.gelatoError ?? ''
+  if (/refunded/i.test(text) && /before the order was finalized/i.test(text)) return 'refunded_unfinalized'
+  if (/charged before the order was finalized/i.test(text)) return 'charged_not_placed'
+  return ''
+}
+
+function chargeWasNotPlaced(order: StoreOrder) {
+  if (order.placed || order.status === 'fulfilled' || order.status === 'canceled' || order.status === 'payment_failed') return false
+  if (order.legs.some((leg) => leg.gelatoOrderId)) return false
+  if (order.fulfillClaim) {
+    const age = Date.now() - Date.parse(order.fulfillClaim)
+    if (age >= 0 && age < 120_000) return false
+  }
+  if (order.status === 'fulfillment_failed' && !/before the order was finalized/i.test(order.gelatoError ?? '')) return false
+  return true
+}
+
+async function recordTax(env: Env, order: StoreOrder) {
+  if (!order.stripeTaxCalculationId || !env.STRIPE_SECRET_KEY) return
+  try {
+    await createTaxTransaction(env.STRIPE_SECRET_KEY, order.stripeTaxCalculationId, order.id)
+  } catch (error) {
+    const message = error instanceof Error ? error.message : ''
+    if (!/already/i.test(message)) console.error(message)
+  }
+}
+
+async function releaseAuthorization(env: Env, order: StoreOrder) {
+  if (!env.STRIPE_SECRET_KEY || !order.stripePaymentIntentId) return
+  try {
+    const intent = await getPaymentIntent(env.STRIPE_SECRET_KEY, order.stripePaymentIntentId)
+    if (intent.status === 'requires_capture' || intent.status === 'requires_action' || intent.status === 'requires_confirmation' || intent.status === 'requires_payment_method') {
+      await cancelPaymentIntent(env.STRIPE_SECRET_KEY, intent.id)
+    }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : ''
+    if (!/cancel+ed/i.test(message)) console.error(message)
+  }
+}
+
+async function releaseUnfinalizedCharge(env: Env, order: StoreOrder) {
+  const latest = (await getOrder(env.PHOTOS_KV, order.id)) ?? order
+  if (!chargeWasNotPlaced(latest)) return latest
+  if (!env.STRIPE_SECRET_KEY || !latest.stripePaymentIntentId) return latest
+  try {
+    await refundPaymentIntent(env.STRIPE_SECRET_KEY, latest.stripePaymentIntentId)
+    latest.status = 'canceled'
+    latest.gelatoError = 'The card was charged before the order was finalized. The payment was refunded and nothing was sent to print.'
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Refund failed'
+    if (/already been refunded|has already been refunded/i.test(message)) {
+      latest.status = 'canceled'
+      latest.gelatoError = 'The card was charged before the order was finalized. The payment was refunded and nothing was sent to print.'
+    } else {
+      latest.status = 'fulfillment_failed'
+      latest.gelatoError = 'The card was charged before the order was finalized, so it was not sent to print. Refund it from this order.'
+      console.error(message)
+    }
+  }
+  await saveOrder(env.PHOTOS_KV, latest)
+  return latest
 }
 
 function itemsForLeg(order: StoreOrder, leg: OrderLeg) {
@@ -491,15 +558,6 @@ async function fulfill(env: Env, order: StoreOrder) {
   order.fulfillClaim = new Date().toISOString()
   order.gelatoError = undefined
   await saveOrder(env.PHOTOS_KV, order)
-
-  if (order.stripeTaxCalculationId && env.STRIPE_SECRET_KEY) {
-    try {
-      await createTaxTransaction(env.STRIPE_SECRET_KEY, order.stripeTaxCalculationId, order.id)
-    } catch (error) {
-      const message = error instanceof Error ? error.message : ''
-      if (!/already/i.test(message)) console.error(message)
-    }
-  }
 
   const errors: string[] = []
   for (const leg of order.legs) {
@@ -555,6 +613,66 @@ async function fulfill(env: Env, order: StoreOrder) {
   return order
 }
 
+async function finalizeAuthorized(env: Env, order: StoreOrder, paymentIntentId: string) {
+  if (!env.STRIPE_SECRET_KEY) throw new HttpError(503, 'Card payments are not available right now')
+  const current = (await getOrder(env.PHOTOS_KV, order.id)) ?? order
+  if (current.status === 'canceled' || current.status === 'payment_failed') return current
+  if (current.stripePaymentIntentId && current.stripePaymentIntentId !== paymentIntentId) {
+    throw new HttpError(400, 'That payment does not match this order')
+  }
+  const intent = await getPaymentIntent(env.STRIPE_SECRET_KEY, paymentIntentId)
+  if (intent.metadata.orderId !== current.id) throw new HttpError(400, 'That payment does not match this order')
+  if (intent.amount !== current.totalCents || intent.currency !== 'usd') {
+    throw new HttpError(400, 'That payment does not match this order')
+  }
+  if (intent.status === 'succeeded') {
+    if (chargeWasNotPlaced(current)) return releaseUnfinalizedCharge(env, current)
+    if (current.status === 'fulfilled') {
+      await recordTax(env, current)
+      return current
+    }
+  }
+  if (current.status === 'fulfilled' || (current.legs.length > 0 && current.legs.every((leg) => leg.gelatoOrderId))) {
+    if (intent.status === 'requires_capture') await capturePaymentIntent(env.STRIPE_SECRET_KEY, intent.id)
+    current.placed = true
+    current.status = 'fulfilled'
+    current.gelatoError = undefined
+    await saveOrder(env.PHOTOS_KV, current)
+    await recordTax(env, current)
+    return current
+  }
+  if (intent.status !== 'requires_capture') return current
+
+  const sent = await fulfill(env, current)
+  if (sent.status !== 'fulfilled') {
+    if (sent.fulfillClaim && sent.status === 'paid') return sent
+    await releaseAuthorization(env, sent)
+    sent.status = 'payment_failed'
+    sent.fulfillClaim = undefined
+    sent.gelatoError = sent.gelatoError
+      ? `${sent.gelatoError} The card was not charged.`
+      : 'The print order was not accepted, so the card was not charged.'
+    await saveOrder(env.PHOTOS_KV, sent)
+    return sent
+  }
+
+  sent.placed = true
+  await saveOrder(env.PHOTOS_KV, sent)
+  try {
+    await capturePaymentIntent(env.STRIPE_SECRET_KEY, intent.id)
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'The card hold could not be captured'
+    if (!/already been captured|already captured/i.test(message)) {
+      sent.status = 'fulfillment_failed'
+      sent.gelatoError = 'The print order was accepted, but the card was not charged.'
+      await saveOrder(env.PHOTOS_KV, sent)
+      return sent
+    }
+  }
+  await recordTax(env, sent)
+  return sent
+}
+
 async function syncFromStripe(env: Env, order: StoreOrder, paymentIntentId: string) {
   if (order.status === 'canceled') return order
   if (!env.STRIPE_SECRET_KEY) throw new HttpError(503, 'Card payments are not available right now')
@@ -563,14 +681,26 @@ async function syncFromStripe(env: Env, order: StoreOrder, paymentIntentId: stri
   }
   const intent = await getPaymentIntent(env.STRIPE_SECRET_KEY, paymentIntentId)
   if (intent.metadata.orderId !== order.id) throw new HttpError(400, 'That payment does not match this order')
+  if (intent.amount !== order.totalCents || intent.currency !== 'usd') {
+    order.status = 'fulfillment_failed'
+    order.gelatoError = 'The Stripe payment amount does not match this order'
+    await saveOrder(env.PHOTOS_KV, order)
+    return order
+  }
+  if (intent.status === 'requires_capture') return finalizeAuthorized(env, order, paymentIntentId)
   if (intent.status === 'succeeded') {
-    if (intent.amount !== order.totalCents || intent.currency !== 'usd') {
-      order.status = 'fulfillment_failed'
-      order.gelatoError = 'The Stripe payment amount does not match this order'
-      await saveOrder(env.PHOTOS_KV, order)
+    if (chargeWasNotPlaced(order)) return releaseUnfinalizedCharge(env, order)
+    if (order.status === 'fulfilled') {
+      await recordTax(env, order)
       return order
     }
-    return fulfill(env, order)
+    const sent = await fulfill(env, order)
+    if (sent.status === 'fulfilled') {
+      sent.placed = true
+      await saveOrder(env.PHOTOS_KV, sent)
+      await recordTax(env, sent)
+    }
+    return sent
   }
   if (intent.status === 'canceled' && order.status === 'pending') {
     order.status = 'payment_failed'
@@ -719,8 +849,9 @@ export async function handleStoreRequest(request: Request, env: Env) {
     const productMatch = /^\/api\/store\/products\/([A-Za-z0-9_-]{8,80})$/.exec(path)
     if (productMatch && request.method === 'GET') return await publicOne(env, productMatch[1]!)
     if (path === '/api/store/quote' && request.method === 'POST') return await quote(request, env)
+    if (path === '/api/store/review' && request.method === 'POST') return await review(request, env)
     if (path === '/api/store/checkout' && request.method === 'POST') return await checkout(request, env)
-    const confirmMatch = /^\/api\/store\/orders\/(ord_[A-Za-z0-9_-]{8,80})\/confirm$/.exec(path)
+    const confirmMatch = /^\/api\/store\/orders\/(ord_[A-Za-z0-9_-]{8,80})\/(?:confirm|finalize)$/.exec(path)
     if (confirmMatch && request.method === 'POST') return await confirm(request, env, confirmMatch[1]!)
     if (path === '/api/admin/store' && request.method === 'GET') return await adminGet(request, env, false)
     if (path === '/api/admin/store/refresh' && request.method === 'POST') return await adminGet(request, env, true)
@@ -761,6 +892,8 @@ function publicGroups(groups: StoreGroups) {
     name: group.name,
     description: group.description,
     productIds: group.productIds,
+    image: group.image,
+    imageProductId: group.imageProductId,
   })
   return {
     categories: groups.categories.map(shape),
@@ -849,8 +982,69 @@ async function quote(request: Request, env: Env) {
   })
 }
 
-async function checkout(request: Request, env: Env) {
-  const body = (await readJson(request)) as { address?: unknown; shippingOptionId?: unknown }
+type PreparedCharge = {
+  body: {
+    totalCents?: unknown
+    confirmationToken?: unknown
+    paymentMethodId?: unknown
+  }
+  address: ShippingAddress
+  priced: Awaited<ReturnType<typeof priceCart>>
+  option: Awaited<ReturnType<typeof priceCart>>['shipping'][number]
+  coupon: StoreCoupon | null
+  publishableKey: string
+  discountCents: number
+  tax: { id: string; amountTotal: number; taxCents: number }
+  taxCents: number
+}
+
+function chargeSummary(ready: PreparedCharge) {
+  return {
+    publishableKey: ready.publishableKey,
+    subtotalCents: ready.priced.subtotalCents,
+    shippingCents: ready.option.retailCents,
+    shippingLabel: ready.option.label,
+    discountCents: ready.discountCents,
+    coupon: couponPublic(ready.coupon),
+    taxCents: ready.taxCents,
+    totalCents: ready.tax.amountTotal,
+    minDeliveryDays: ready.option.minDeliveryDays,
+    maxDeliveryDays: ready.option.maxDeliveryDays,
+    lines: ready.priced.lines.map((line) => ({
+      productId: line.productId,
+      variantId: line.variantId,
+      title: line.title,
+      variantTitle: line.variantTitle,
+      quantity: line.quantity,
+      unitPriceCents: line.unitPriceCents,
+      linePriceCents: line.retailCents,
+    })),
+  }
+}
+
+function checkoutOrigin(request: Request) {
+  const requestOrigin = new URL(request.url).origin
+  const header = request.headers.get('origin')
+  for (const candidate of [header, requestOrigin]) {
+    if (!candidate) continue
+    try {
+      const url = new URL(candidate)
+      const host = url.hostname
+      const allowed =
+        host === 'localhost' ||
+        host === '127.0.0.1' ||
+        host === 'adventuresswflorida.com' ||
+        host.endsWith('.adventuresswflorida.com')
+      if (allowed && (url.protocol === 'https:' || url.protocol === 'http:')) return url.origin
+    } catch {
+      /* try the next candidate */
+    }
+  }
+  return requestOrigin
+}
+
+async function prepareCharge(request: Request, env: Env): Promise<PreparedCharge> {
+  const body = (await readJson(request)) as PreparedCharge['body'] & { address?: unknown; shippingOptionId?: unknown }
   const address = validateAddress(body.address)
   if (!address.ok) throw new HttpError(400, address.error)
   const shippingOptionId = typeof body.shippingOptionId === 'string' ? body.shippingOptionId : ''
@@ -863,8 +1057,7 @@ async function checkout(request: Request, env: Env) {
   const discountCents = priced.discountCents + option.discountCents
   const chargedSubtotal = priced.subtotalCents - priced.discountCents
   const chargedShipping = option.retailCents - option.discountCents
-
-  let tax: { id: string; amountTotal: number; taxCents: number }
+  let tax: PreparedCharge['tax']
   try {
     tax = await createTaxCalculation(env.STRIPE_SECRET_KEY, {
       address: address.address,
@@ -878,27 +1071,63 @@ async function checkout(request: Request, env: Env) {
     throw new HttpError(400, stripeMessage(error))
   }
   if (tax.amountTotal < 50) throw new HttpError(400, 'This order is below the minimum card payment')
-  const taxCents = Math.max(0, tax.amountTotal - chargedSubtotal - chargedShipping)
+  return {
+    body,
+    address: address.address,
+    priced,
+    option,
+    coupon,
+    publishableKey: key,
+    discountCents,
+    tax,
+    taxCents: Math.max(0, tax.amountTotal - chargedSubtotal - chargedShipping),
+  }
+}
 
+async function review(request: Request, env: Env) {
+  return json(chargeSummary(await prepareCharge(request, env)))
+}
+
+async function checkout(request: Request, env: Env) {
+  const ready = await prepareCharge(request, env)
+  if (ready.body.totalCents !== ready.tax.amountTotal) {
+    throw new HttpError(400, 'The total changed. Continue to payment again before placing the order.')
+  }
+  const confirmationToken = typeof ready.body.confirmationToken === 'string' ? ready.body.confirmationToken.trim() : ''
+  const paymentMethodId = typeof ready.body.paymentMethodId === 'string' ? ready.body.paymentMethodId.trim() : ''
+  if (confirmationToken && !/^ctoken_[A-Za-z0-9_]+$/.test(confirmationToken)) {
+    throw new HttpError(400, 'Place the order again. The card was not charged.')
+  }
+  if (paymentMethodId && !/^pm_[A-Za-z0-9]+$/.test(paymentMethodId)) {
+    throw new HttpError(400, 'Place the order again. The card was not charged.')
+  }
+  if (!confirmationToken && !paymentMethodId) {
+    throw new HttpError(400, 'Place the order to pay. Nothing is charged before that.')
+  }
+
+  const { priced, option, coupon, address } = ready
   const orderId = `ord_${crypto.randomUUID()}`
-  let intent: { id: string; clientSecret: string }
+  let intent: { id: string; clientSecret: string; status: string }
   try {
-    intent = await createPaymentIntent(env.STRIPE_SECRET_KEY, {
-      amount: tax.amountTotal,
+    intent = await createPaymentIntent(env.STRIPE_SECRET_KEY!, {
+      amount: ready.tax.amountTotal,
       orderId,
-      email: address.address.email,
+      email: address.email,
       idempotencyKey: orderId,
-      address: address.address,
+      confirmationToken: confirmationToken || undefined,
+      paymentMethodId: confirmationToken ? undefined : paymentMethodId,
+      returnUrl: `${checkoutOrigin(request)}/store/order/${orderId}`,
+      address,
     })
   } catch (error) {
-    throw new HttpError(400, stripeMessage(error))
+    throw new HttpError(400, `The card was not charged and the order was not placed. ${stripeMessage(error)}`)
   }
 
   const order: StoreOrder = {
     id: orderId,
     createdAt: new Date().toISOString(),
     status: 'pending',
-    email: address.address.email,
+    email: address.email,
     currency: 'usd',
     items: priced.lines.map((line) => ({
       productId: line.productId,
@@ -923,41 +1152,52 @@ async function checkout(request: Request, env: Env) {
     shippingLabel: option.label,
     shippingRetailCents: option.retailCents,
     shippingWholesaleCents: option.wholesaleCents,
-    discountCents,
+    discountCents: ready.discountCents,
     couponCode: coupon?.code,
     couponPercent: coupon?.percent,
     minDeliveryDays: option.minDeliveryDays,
     maxDeliveryDays: option.maxDeliveryDays,
-    address: address.address,
+    address,
     subtotalCents: priced.subtotalCents,
-    taxCents,
-    totalCents: tax.amountTotal,
+    taxCents: ready.taxCents,
+    totalCents: ready.tax.amountTotal,
     stripePaymentIntentId: intent.id,
-    stripeTaxCalculationId: tax.id,
+    stripeTaxCalculationId: ready.tax.id,
+    placed: false,
   }
   await saveOrder(env.PHOTOS_KV, order)
+
+  let status = intent.status
+  if (status === 'requires_capture') {
+    try {
+      const done = await finalizeAuthorized(env, order, intent.id)
+      status = done.status
+    } catch (error) {
+      await releaseAuthorization(env, order)
+      order.status = 'payment_failed'
+      order.gelatoError = 'The order was not placed, so the card was not charged.'
+      await saveOrder(env.PHOTOS_KV, order)
+      console.error(error instanceof Error ? error.message : 'The order was not placed')
+      throw new HttpError(400, 'The order was not placed and the card was not charged.')
+    }
+  } else if (status === 'succeeded') {
+    const done = await releaseUnfinalizedCharge(env, order)
+    status = done.status
+  } else if (status !== 'requires_action') {
+    order.status = 'payment_failed'
+    order.gelatoError = 'The card was not charged.'
+    await saveOrder(env.PHOTOS_KV, order)
+    await releaseAuthorization(env, order)
+    throw new HttpError(400, 'The card was not charged and the order was not placed.')
+  }
+
   return json({
+    ...chargeSummary(ready),
     orderId,
+    paymentIntentId: intent.id,
     clientSecret: intent.clientSecret,
-    publishableKey: key,
-    subtotalCents: priced.subtotalCents,
-    shippingCents: option.retailCents,
-    shippingLabel: option.label,
-    discountCents,
-    coupon: couponPublic(coupon),
-    taxCents,
-    totalCents: tax.amountTotal,
-    minDeliveryDays: option.minDeliveryDays,
-    maxDeliveryDays: option.maxDeliveryDays,
-    lines: priced.lines.map((line) => ({
-      productId: line.productId,
-      variantId: line.variantId,
-      title: line.title,
-      variantTitle: line.variantTitle,
-      quantity: line.quantity,
-      unitPriceCents: line.unitPriceCents,
-      linePriceCents: line.retailCents,
-    })),
+    requiresAction: status === 'requires_action' || intent.status === 'requires_action',
+    status,
   })
 }
 
@@ -990,7 +1230,8 @@ async function webhook(request: Request, env: Env) {
   if (!order || !intent?.id) return json({ received: true })
   if (order.stripePaymentIntentId && order.stripePaymentIntentId !== intent.id) return json({ received: true })
   if (event.type === 'payment_intent.succeeded') {
-    await syncFromStripe(env, order, intent.id)
+    const latest = await getOrder(env.PHOTOS_KV, order.id)
+    if (latest && latest.status === 'pending' && chargeWasNotPlaced(latest)) await releaseUnfinalizedCharge(env, latest)
   } else if (event.type === 'payment_intent.payment_failed' && order.status === 'pending') {
     order.status = 'payment_failed'
     await saveOrder(env.PHOTOS_KV, order)
@@ -1141,6 +1382,8 @@ async function adminCreateGroup(request: Request, env: Env, kind: 'categories' |
     name,
     description: groupText(body.description, 240),
     productIds: [],
+    image: '',
+    imageProductId: '',
   }
   const saved = await saveGroups(env.PHOTOS_KV, { ...groups, [kind]: [...list, next] })
   return json({ groups: saved })
@@ -1148,7 +1391,7 @@ async function adminCreateGroup(request: Request, env: Env, kind: 'categories' |
 
 async function adminUpdateGroup(request: Request, env: Env, kind: 'categories' | 'collections', id: string) {
   await requireAdmin(request, env)
-  const body = (await readJson(request)) as { name?: unknown; description?: unknown }
+  const body = (await readJson(request)) as { name?: unknown; description?: unknown; image?: unknown; imageProductId?: unknown }
   const groups = await getGroups(env.PHOTOS_KV)
   const list = groups[kind]
   const group = list.find((item) => item.id === id)
@@ -1159,6 +1402,18 @@ async function adminUpdateGroup(request: Request, env: Env, kind: 'categories' |
     group.name = name
   }
   if ('description' in body) group.description = groupText(body.description, 240)
+  if ('image' in body) {
+    const image = typeof body.image === 'string' ? body.image.trim() : ''
+    if (image && !siteImagePath(image)) throw new HttpError(400, 'Choose a photo from the site')
+    group.image = siteImagePath(image)
+    if (group.image) group.imageProductId = ''
+  }
+  if ('imageProductId' in body) {
+    const productId = typeof body.imageProductId === 'string' ? body.imageProductId.trim() : ''
+    if (productId && !/^[A-Za-z0-9_-]{8,80}$/.test(productId)) throw new HttpError(400, 'Choose a product photo')
+    group.imageProductId = productId
+    if (productId) group.image = ''
+  }
   const saved = await saveGroups(env.PHOTOS_KV, groups)
   return json({ groups: saved })
 }

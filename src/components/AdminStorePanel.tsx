@@ -3,6 +3,22 @@ import { Link } from 'react-router-dom'
 import { storeJson } from '../data/store-client'
 import { formatUsd } from '../shared/store'
 
+const CATEGORY_PHOTOS = [
+  '/photos/alligator.jpg',
+  '/photos/alligator2.jpg',
+  '/photos/claw.jpg',
+  '/photos/destinbeachsunset.jpg',
+  '/photos/flamingo.jpg',
+  '/photos/flamingo2.jpg',
+  '/photos/florida-scrub-jay.jpg',
+  '/photos/greategret.jpg',
+  '/photos/malewoodduck.jpg',
+  '/photos/parrot.jpg',
+  '/photos/pigfrog.jpg',
+  '/photos/snailkite.jpg',
+  '/calendars/2027/photos/front.jpg',
+]
+
 type AdminProduct = {
   id: string
   title: string
@@ -69,6 +85,8 @@ type StoreGroup = {
   name: string
   description: string
   productIds: string[]
+  image: string
+  imageProductId: string
 }
 
 type AdminStore = {
@@ -267,6 +285,26 @@ export function AdminStorePanel() {
       setGroups(payload.groups)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not remove that')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function setCategoryImage(group: StoreGroup, image: string, imageProductId = '') {
+    setBusy(true)
+    setError(null)
+    try {
+      const payload = await storeJson<{ groups: AdminStore['groups'] }>(
+        `/api/admin/store/categories/${encodeURIComponent(group.id)}`,
+        {
+          method: 'PATCH',
+          credentials: 'same-origin',
+          body: JSON.stringify({ image, imageProductId }),
+        },
+      )
+      setGroups(payload.groups)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not save the category image')
     } finally {
       setBusy(false)
     }
@@ -713,7 +751,7 @@ export function AdminStorePanel() {
             <div className="store-admin-split">
               <div className="store-admin-pane">
                 <h3>Categories</h3>
-                <p className="admin-hint">Departments in the shop, such as Prints or Calendars.</p>
+                <p className="admin-hint">Departments in the shop, such as Prints or Calendars. Choose the photo for each tile.</p>
                 <form className="admin-form" onSubmit={(event) => void addGroup(event, 'categories')}>
                   <label>
                     New category
@@ -737,6 +775,40 @@ export function AdminStorePanel() {
                       <li key={group.id}>
                         <strong>{group.name}</strong>
                         <span>{group.productIds.length} products</span>
+                        <div className="store-image-pick" role="listbox" aria-label={`Image for ${group.name}`}>
+                          {CATEGORY_PHOTOS.map((src) => (
+                            <button
+                              key={src}
+                              type="button"
+                              className={group.image === src ? 'is-selected' : ''}
+                              aria-label={src.split('/').pop()}
+                              disabled={busy}
+                              onClick={() => void setCategoryImage(group, src)}
+                            >
+                              <img src={src} alt="" />
+                            </button>
+                          ))}
+                          {data.products
+                            .filter((product) => product.previewUrl)
+                            .map((product) => (
+                              <button
+                                key={product.id}
+                                type="button"
+                                className={!group.image && group.imageProductId === product.id ? 'is-selected' : ''}
+                                aria-label={product.title}
+                                title={product.title}
+                                disabled={busy}
+                                onClick={() => void setCategoryImage(group, '', product.id)}
+                              >
+                                <img src={product.previewUrl} alt="" />
+                              </button>
+                            ))}
+                        </div>
+                        {(group.image || group.imageProductId) && (
+                          <button type="button" className="text-link" disabled={busy} onClick={() => void setCategoryImage(group, '')}>
+                            Use an automatic photo
+                          </button>
+                        )}
                         <button
                           type="button"
                           className="text-link"
@@ -855,8 +927,7 @@ export function AdminStorePanel() {
           {section === 'orders' && (
             <div>
               <p className="admin-hint">
-                Stripe emails the receipt. Gelato prints, ships, and emails tracking. Sync a paid order here if it has
-                not reached Gelato yet.
+                The card is charged only after the customer places the order and the print order is accepted. Sync finishes an authorized order. A charge taken before the order was placed is refunded instead of being sent to print. Cancel also refunds a charge that already went through.
               </p>
               {data.orders.length === 0 ? (
                 <p className="admin-hint">No orders yet.</p>
@@ -907,7 +978,7 @@ export function AdminStorePanel() {
                       <div className="store-order__actions">
                         {order.status !== 'canceled' && order.status !== 'fulfilled' && (
                           <button type="button" className="text-link" disabled={busy} onClick={() => void sync(order)}>
-                            Sync payment and send to Gelato
+                            Settle payment
                           </button>
                         )}
                         {order.status !== 'canceled' && (

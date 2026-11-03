@@ -43,6 +43,11 @@ function countIn(group: StoreGroupPublic, products: StoreProductPublic[]) {
 }
 
 function groupImage(group: StoreGroupPublic, products: StoreProductPublic[], index: number) {
+  if (group.image) return group.image
+  if (group.imageProductId) {
+    const chosen = products.find((product) => product.id === group.imageProductId && product.previewUrl)
+    if (chosen?.previewUrl) return chosen.previewUrl
+  }
   const match = products.find((product) => group.productIds.includes(product.id) && product.previewUrl)
   return match?.previewUrl || TILE_PHOTO[index % TILE_PHOTO.length]!
 }

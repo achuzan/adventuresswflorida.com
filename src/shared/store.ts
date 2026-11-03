@@ -36,6 +36,8 @@ export type StoreGroupPublic = {
   name: string
   description: string
   productIds: string[]
+  image: string
+  imageProductId: string
 }
 
 export type ShippingOptionPublic = {
@@ -65,9 +67,7 @@ export type QuoteResponse = {
   shipping: ShippingOptionPublic[]
 }
 
-export type CheckoutResponse = {
-  orderId: string
-  clientSecret: string
+export type PaymentPreview = {
   publishableKey: string
   subtotalCents: number
   shippingCents: number
@@ -79,6 +79,14 @@ export type CheckoutResponse = {
   lines: QuoteLinePublic[]
   minDeliveryDays: number
   maxDeliveryDays: number
+}
+
+export type CheckoutResponse = PaymentPreview & {
+  orderId: string
+  paymentIntentId: string
+  clientSecret: string
+  requiresAction: boolean
+  status: string
 }
 
 export type PublicOrder = {
@@ -98,6 +106,7 @@ export type PublicOrder = {
   maxDeliveryDays: number
   city: string
   country: string
+  notice: '' | 'charged_not_placed' | 'refunded_unfinalized'
 }
 
 export type ShippingAddress = {

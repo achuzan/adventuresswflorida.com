@@ -23,6 +23,8 @@ export type StoreGroup = {
   name: string
   description: string
   productIds: string[]
+  image: string
+  imageProductId: string
 }
 
 export type StoreGroups = {
@@ -96,6 +98,7 @@ export type StoreOrder = {
   stripeTaxCalculationId?: string
   gelatoError?: string
   fulfillClaim?: string
+  placed?: boolean
 }
 
 type PriceRow = { cents: number | null; at: number }
@@ -194,6 +197,14 @@ function emptyGroups(): StoreGroups {
   return { categories: [], collections: [] }
 }
 
+export function siteImagePath(value: unknown) {
+  if (typeof value !== 'string') return ''
+  const image = value.trim()
+  if (!image) return ''
+  if (!/^\/(?:photos|calendars\/2027\/photos)\/[A-Za-z0-9._-]+\.(?:jpe?g|png|webp)$/i.test(image)) return ''
+  return image.slice(0, 120)
+}
+
 function parseGroup(row: unknown): StoreGroup | null {
   if (!row || typeof row !== 'object') return null
   const item = row as Partial<StoreGroup>
@@ -208,6 +219,11 @@ function parseGroup(row: unknown): StoreGroup | null {
     name: name.slice(0, 60),
     description: typeof item.description === 'string' ? item.description.trim().slice(0, 240) : '',
     productIds,
+    image: siteImagePath(item.image),
+    imageProductId:
+      typeof item.imageProductId === 'string' && /^[A-Za-z0-9_-]{8,80}$/.test(item.imageProductId)
+        ? item.imageProductId
+        : '',
   }
 }
 
