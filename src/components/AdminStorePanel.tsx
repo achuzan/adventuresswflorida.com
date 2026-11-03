@@ -675,12 +675,6 @@ export function AdminStorePanel() {
                               ? 'Gelato did not return a US price'
                               : `Gelato cost ${formatUsd(product.wholesaleCents)} · customer ${formatUsd(product.retailCents ?? 0)}`}
                         </p>
-                        {!product.hasPrintFile && (
-                          <p className="admin-hint">
-                            Gelato did not attach a print file. Orders are still sent, and Gelato rejects them if the
-                            design is not already stored on the product.
-                          </p>
-                        )}
                         <label className="admin-check">
                           <input type="checkbox" checked={product.enabled} onChange={() => void toggle(product)} />
                           Show in the store

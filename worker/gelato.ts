@@ -92,16 +92,30 @@ function num(value: unknown) {
   return Number.isFinite(parsed) ? parsed : null
 }
 
+function gelatoFieldErrors(data: unknown) {
+  if (!isRecord(data)) return []
+  const rows = Array.isArray(data.errors) ? data.errors : Array.isArray(data.details) ? data.details : []
+  return rows.flatMap((row) => {
+    if (typeof row === 'string' && row.trim()) return [row.trim()]
+    if (!isRecord(row)) return []
+    const message = str(row.message)
+    const reference = str(row.reference) || str(row.path) || str(row.field)
+    const text = [reference, message].filter(Boolean).join(': ')
+    return text ? [text] : []
+  })
+}
+
 function gelatoMessage(data: unknown) {
   if (!isRecord(data)) return ''
-  if (typeof data.message === 'string' && data.message.trim()) return data.message.trim()
-  if (typeof data.error === 'string' && data.error.trim()) return data.error.trim()
-  if (isRecord(data.error) && typeof data.error.message === 'string') return data.error.message.trim()
-  if (Array.isArray(data.errors) && isRecord(data.errors[0])) {
-    const message = data.errors[0].message
-    if (typeof message === 'string') return message.trim()
-  }
-  return ''
+  const summary =
+    (typeof data.message === 'string' && data.message.trim()) ||
+    (typeof data.error === 'string' && data.error.trim()) ||
+    (isRecord(data.error) && typeof data.error.message === 'string' && data.error.message.trim()) ||
+    ''
+  const fields = gelatoFieldErrors(data)
+  if (fields.length && (!summary || /submitted data/i.test(summary))) return fields.join('; ')
+  if (summary && fields.length && !fields.some((field) => summary.includes(field))) return `${summary} (${fields.join('; ')})`
+  return summary
 }
 
 export function asArray(data: unknown, keys: string[]) {
@@ -199,7 +213,7 @@ function collectFiles(record: Record<string, unknown>) {
     if (!Array.isArray(list)) continue
     for (const item of list) {
       if (!isRecord(item)) continue
-      push(str(item.type) || 'default', httpsUrl(item.url) || httpsUrl(item.fileUrl))
+      push(fileType(str(item.type), str(item.type)), httpsUrl(item.url) || httpsUrl(item.fileUrl))
     }
   }
   for (const key of ['imagePlaceholders', 'placeholders'] as const) {
@@ -680,6 +694,8 @@ export async function createGelatoOrder(
   items: {
     itemReferenceId: string
     productUid: string
+    storeProductId: string
+    storeProductVariantId: string
     quantity: number
     files: PrintFile[]
     pageCount?: number
@@ -696,6 +712,8 @@ export async function createGelatoOrder(
       items: items.map((item) => ({
         itemReferenceId: item.itemReferenceId,
         productUid: item.productUid,
+        storeProductId: item.storeProductId,
+        storeProductVariantId: item.storeProductVariantId,
         quantity: item.quantity,
         ...(item.pageCount ? { pageCount: item.pageCount } : {}),
         ...(item.files.length ? { files: item.files } : {}),

@@ -106,6 +106,9 @@ export async function createPaymentIntent(
   },
 ) {
   const params = new URLSearchParams()
+  if (!Number.isInteger(input.amount) || input.amount < 50 || input.amount > 1_000_000) {
+    throw new Error('The payment amount is not valid')
+  }
   params.set('amount', String(input.amount))
   params.set('currency', 'usd')
   params.set('capture_method', 'manual')
