@@ -14,6 +14,9 @@ type AdminProduct = {
   sellable: boolean
   variantCount: number
   hasPrintFile: boolean
+  imageCount: number
+  description: string
+  descriptionSource: 'openai' | 'edited' | 'gelato'
   pricePending: boolean
   wholesaleCents: number | null
   retailCents: number | null
@@ -67,6 +70,8 @@ type AdminStore = {
     stripeSecret: boolean
     stripePublishable: boolean
     stripeWebhook: boolean
+    openai: boolean
+    openaiSource: 'cloudflare' | 'admin' | 'none'
   }
   products: AdminProduct[]
   orders: AdminOrder[]
@@ -87,6 +92,10 @@ export function AdminStorePanel() {
   const [couponPercent, setCouponPercent] = useState('10')
   const [categoryName, setCategoryName] = useState('')
   const [collectionName, setCollectionName] = useState('')
+  const [section, setSection] = useState<'products' | 'catalog' | 'coupons' | 'orders' | 'settings'>('products')
+  const [openaiKey, setOpenaiKey] = useState('')
+  const [clearOpenai, setClearOpenai] = useState(false)
+  const [drafts, setDrafts] = useState<Record<string, string>>({})
 
   async function load(refresh = false, fillForm = false, mergePrices = false) {
     const payload = refresh
@@ -173,9 +182,13 @@ export function AdminStorePanel() {
         shippingMarkupPercent: Number(shippingMarkup),
         storeId,
         templateIds,
+        ...(openaiKey.trim() ? { openaiKey } : {}),
+        ...(clearOpenai ? { clearOpenaiKey: true } : {}),
       }),
     })
     setData(payload)
+    setOpenaiKey('')
+    setClearOpenai(false)
   }
 
   function setCoupons(coupons: StoreCoupon[]) {
@@ -365,6 +378,78 @@ export function AdminStorePanel() {
     }
   }
 
+  async function saveDescription(product: AdminProduct) {
+    const description = drafts[product.id] ?? product.description
+    setBusy(true)
+    setError(null)
+    try {
+      await storeJson(`/api/admin/store/products/${encodeURIComponent(product.id)}`, {
+        method: 'PATCH',
+        credentials: 'same-origin',
+        body: JSON.stringify({ description }),
+      })
+      setData((current) =>
+        current
+          ? {
+              ...current,
+              products: current.products.map((item) =>
+                item.id === product.id
+                  ? { ...item, description, descriptionSource: description.trim() ? 'edited' : 'gelato' }
+                  : item,
+              ),
+            }
+          : current,
+      )
+      setNotice('Saved that description.')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not save that description')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function writeDescriptions(productId?: string) {
+    setBusy(true)
+    setError(null)
+    setNotice(null)
+    try {
+      const payload = await storeJson<{
+        updated: { id: string; title: string; description: string }[]
+        remaining: number
+      }>('/api/admin/store/descriptions', {
+        method: 'POST',
+        credentials: 'same-origin',
+        body: JSON.stringify(productId ? { productId } : {}),
+      })
+      setData((current) => {
+        if (!current) return current
+        const byId = new Map(payload.updated.map((item) => [item.id, item.description]))
+        return {
+          ...current,
+          products: current.products.map((item) =>
+            byId.has(item.id)
+              ? { ...item, description: byId.get(item.id) || item.description, descriptionSource: 'openai' as const }
+              : item,
+          ),
+        }
+      })
+      setDrafts((current) => {
+        const next = { ...current }
+        for (const item of payload.updated) delete next[item.id]
+        return next
+      })
+      setNotice(
+        payload.updated.length
+          ? `Wrote ${payload.updated.length} description${payload.updated.length === 1 ? '' : 's'}.${payload.remaining ? ` ${payload.remaining} still use the Gelato text.` : ''}`
+          : 'Every product already has a store description.',
+      )
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not write descriptions')
+    } finally {
+      setBusy(false)
+    }
+  }
+
   async function testConnections() {
     setTesting(true)
     setError(null)
@@ -417,315 +502,422 @@ export function AdminStorePanel() {
   }
 
   return (
-    <section className="admin-card">
-      <h2>Store</h2>
-      <p className="admin-hint">
-        Products come from Gelato and stay hidden until you turn them on. Gelato’s price is what Gelato
-        charges this account. Markup is added for the customer. Stripe takes the card payment and emails
-        a receipt. Gelato prints, ships, and emails tracking. This list is the place to see a payment
-        that has not reached Gelato yet.
-      </p>
-      <p className="admin-hint">
-        <Link to="/store">View the store</Link>
-      </p>
+    <section className="admin-card store-admin">
+      <div className="store-admin__head">
+        <div>
+          <h2>Store</h2>
+          <p className="admin-hint">
+            <Link to="/store">View the store</Link>
+          </p>
+        </div>
+      </div>
       {!data && !error && <p className="admin-status">Loading store…</p>}
       {error && <p className="admin-error">{error}</p>}
       {notice && <p className="admin-notice">{notice}</p>}
       {data && (
         <>
-          <ul className="store-secrets">
-            <li>{data.secrets.gelato ? 'Gelato API key is set' : 'Missing GELATO_API_KEY'}</li>
-            <li>{data.secrets.stripeSecret ? 'Stripe secret key is set' : 'Missing STRIPE_SECRET_KEY'}</li>
-            <li>
-              {data.secrets.stripePublishable
-                ? 'Stripe publishable key is set'
-                : 'Missing STRIPE_PUBLISHABLE_KEY'}
-            </li>
-            <li>
-              {data.secrets.stripeWebhook
-                ? 'Stripe webhook secret is set'
-                : 'STRIPE_WEBHOOK_SECRET is not set yet. Payments can still complete from the order page. Add the webhook later at /api/stripe/webhook for payment_intent.succeeded and payment_intent.payment_failed.'}
-            </li>
-          </ul>
-          <div className="store-actions">
-            <button type="button" className="btn btn--ghost" disabled={testing} onClick={() => void testConnections()}>
-              {testing ? 'Testing connections…' : 'Test connections'}
-            </button>
+          <div className="store-admin-nav" role="tablist" aria-label="Store sections">
+            {(
+              [
+                ['products', `Products (${data.products.length})`],
+                ['catalog', 'Categories'],
+                ['coupons', `Coupons (${data.coupons?.length ?? 0})`],
+                ['orders', `Orders (${data.orders.length})`],
+                ['settings', 'Settings'],
+              ] as const
+            ).map(([id, label]) => (
+              <button key={id} type="button" role="tab" aria-selected={section === id} onClick={() => setSection(id)}>
+                {label}
+              </button>
+            ))}
           </div>
-          {checks && (
-            <ul className="store-checks">
-              {checks.map((item) => (
-                <li key={item.id} className={`is-${item.status}`}>
-                  <strong>{item.name}.</strong> {item.detail}
-                </li>
-              ))}
-            </ul>
-          )}
-          <form className="admin-grid" onSubmit={(event) => void saveSettings(event)}>
-            <label>
-              Print markup %
-              <input inputMode="decimal" value={markup} onChange={(event) => setMarkup(event.target.value)} />
-            </label>
-            <label>
-              Shipping markup %
-              <input
-                inputMode="decimal"
-                value={shippingMarkup}
-                onChange={(event) => setShippingMarkup(event.target.value)}
-              />
-            </label>
-            <label className="admin-span-2">
-              Gelato store id
-              <input
-                value={storeId}
-                onChange={(event) => setStoreId(event.target.value)}
-                placeholder="From the store URL in the Gelato dashboard"
-              />
-            </label>
-            <label className="admin-span-2">
-              Template ids
-              <textarea
-                rows={3}
-                value={templateIds}
-                onChange={(event) => setTemplateIds(event.target.value)}
-                placeholder="One Gelato template id per line, if products were saved as templates"
-              />
-            </label>
-            <div className="admin-span-2 store-actions">
-              <button className="btn btn--accent" type="submit" disabled={busy}>
-                Save settings
-              </button>
-              <button type="button" className="btn btn--ghost" disabled={busy} onClick={() => void refresh()}>
-                Refresh from Gelato
-              </button>
-            </div>
-          </form>
-          <form className="admin-grid" onSubmit={(event) => void addCoupon(event)}>
-            <h2 className="admin-span-2">Coupons</h2>
-            <p className="admin-hint admin-span-2">
-              A coupon removes a percent of the print and shipping markup. Gelato’s cost is never discounted.
-              100% means the customer pays Gelato’s price.
-            </p>
-            <label>
-              Code
-              <input
-                value={couponCode}
-                onChange={(event) => setCouponCode(event.target.value)}
-                placeholder="SPRING"
-                maxLength={24}
-                required
-              />
-            </label>
-            <label>
-              Percent of markup
-              <input
-                inputMode="numeric"
-                value={couponPercent}
-                onChange={(event) => setCouponPercent(event.target.value)}
-                min={1}
-                max={100}
-                required
-              />
-            </label>
-            <div className="admin-span-2">
-              <button className="btn btn--accent" type="submit" disabled={busy}>
-                Add coupon
-              </button>
-            </div>
-          </form>
-          {(data.coupons ?? []).length === 0 ? (
-            <p className="admin-hint">No coupon codes yet.</p>
-          ) : (
-            <ul className="store-orders">
-              {(data.coupons ?? []).map((coupon) => (
-                <li key={coupon.code}>
-                  <strong>{coupon.code}</strong>
-                  <span>{coupon.percent}% off the markup</span>
-                  <label className="admin-check">
-                    <input
-                      type="checkbox"
-                      checked={coupon.active}
-                      onChange={() => void setCouponActive(coupon, !coupon.active)}
-                    />
-                    Active
-                  </label>
-                  <button type="button" className="text-link" disabled={busy} onClick={() => void removeCoupon(coupon)}>
-                    Remove
-                  </button>
-                </li>
-              ))}
-            </ul>
-          )}
-          <h2>Categories and collections</h2>
-          <p className="admin-hint">
-            Categories are the shop departments, such as Prints or Calendars. Collections are curated groups, such as
-            a season or a gift set. Assign each product below. The store shows both.
-          </p>
-          <form className="admin-form" onSubmit={(event) => void addGroup(event, 'categories')}>
-            <label>
-              New category
-              <input
-                value={categoryName}
-                onChange={(event) => setCategoryName(event.target.value)}
-                placeholder="Prints"
-                maxLength={60}
-                required
-              />
-            </label>
+
+          {section === 'products' && (
             <div>
-              <button className="btn btn--accent" type="submit" disabled={busy}>
-                Add category
-              </button>
-            </div>
-          </form>
-          {groups.categories.length === 0 ? (
-            <p className="admin-hint">No categories yet.</p>
-          ) : (
-            <ul className="store-orders">
-              {groups.categories.map((group) => (
-                <li key={group.id}>
-                  <strong>{group.name}</strong>
-                  <span>{group.productIds.length} products</span>
-                  <button type="button" className="text-link" disabled={busy} onClick={() => void removeGroup('categories', group)}>
-                    Remove
-                  </button>
-                </li>
-              ))}
-            </ul>
-          )}
-          <form className="admin-form" onSubmit={(event) => void addGroup(event, 'collections')}>
-            <label>
-              New collection
-              <input
-                value={collectionName}
-                onChange={(event) => setCollectionName(event.target.value)}
-                placeholder="Spring gifts"
-                maxLength={60}
-                required
-              />
-            </label>
-            <div>
-              <button className="btn btn--accent" type="submit" disabled={busy}>
-                Add collection
-              </button>
-            </div>
-          </form>
-          {groups.collections.length === 0 ? (
-            <p className="admin-hint">No collections yet.</p>
-          ) : (
-            <ul className="store-orders">
-              {groups.collections.map((group) => (
-                <li key={group.id}>
-                  <strong>{group.name}</strong>
-                  <span>{group.productIds.length} products</span>
-                  <button type="button" className="text-link" disabled={busy} onClick={() => void removeGroup('collections', group)}>
-                    Remove
-                  </button>
-                </li>
-              ))}
-            </ul>
-          )}
-          {data.notes.length > 0 && (
-            <ul className="admin-hint">
-              {data.notes.map((note) => (
-                <li key={note}>{note}</li>
-              ))}
-            </ul>
-          )}
-          <p className="admin-hint">Last product pull: {new Date(data.fetchedAt).toLocaleString()}</p>
-          {data.products.length === 0 ? (
-            <p>No Gelato products yet. Create them in Gelato, then refresh.</p>
-          ) : (
-            <ul className="admin-photo-list">
-              {data.products.map((product) => (
-                <li key={product.id} className="store-admin-product">
-                  {product.previewUrl ? (
-                    <img src={product.previewUrl} alt="" className="admin-photo-row__thumb" />
-                  ) : (
-                    <span className="admin-photo-row__thumb store-card__fallback" />
-                  )}
-                  <div>
-                    <strong>{product.title}</strong>
-                    <p className="admin-hint">
-                      {product.source} · {product.status || 'active'} · {product.variantCount} variant
-                      {product.variantCount === 1 ? '' : 's'}
-                      {product.productType ? ` · ${product.productType}` : ''}
-                      {product.status === 'publishing'
-                        ? ' · Gelato is still publishing this product'
-                        : product.status === 'publishing_error'
-                          ? ' · Gelato could not publish this product'
-                          : ''}
-                    </p>
-                    <p>
-                      {product.pricePending && product.wholesaleCents == null
-                        ? 'Loading Gelato cost…'
-                        : product.wholesaleCents == null
-                          ? 'Gelato did not return a US price'
-                          : `Gelato cost ${formatUsd(product.wholesaleCents)} · customer ${formatUsd(product.retailCents ?? 0)}`}
-                    </p>
-                    {!product.hasPrintFile && (
-                      <p className="admin-hint">
-                        Gelato did not attach a print file. Orders are still sent, and Gelato rejects them if the
-                        design is not already stored on the product.
-                      </p>
-                    )}
-                    <label className="admin-check">
-                      <input
-                        type="checkbox"
-                        checked={product.enabled}
-                        onChange={() => void toggle(product)}
-                      />
-                      Show in the store
-                    </label>
-                    {(groups.categories.length > 0 || groups.collections.length > 0) && (
-                      <div className="store-assign">
-                        {groups.categories.map((group) => (
-                          <label key={group.id} className="admin-check">
-                            <input
-                              type="checkbox"
-                              checked={group.productIds.includes(product.id)}
-                              onChange={(event) => void setMembership(product, 'categories', group.id, event.target.checked)}
-                            />
-                            {group.name}
-                          </label>
-                        ))}
-                        {groups.collections.map((group) => (
-                          <label key={group.id} className="admin-check">
-                            <input
-                              type="checkbox"
-                              checked={group.productIds.includes(product.id)}
-                              onChange={(event) => void setMembership(product, 'collections', group.id, event.target.checked)}
-                            />
-                            Collection: {group.name}
-                          </label>
-                        ))}
+              <div className="store-actions">
+                <button type="button" className="btn btn--ghost" disabled={busy} onClick={() => void refresh()}>
+                  Refresh from Gelato
+                </button>
+                <button type="button" className="btn btn--accent" disabled={busy} onClick={() => void writeDescriptions()}>
+                  Write missing descriptions
+                </button>
+                <p className="admin-hint">Last pull {new Date(data.fetchedAt).toLocaleString()}</p>
+              </div>
+              {data.notes.length > 0 && (
+                <ul className="admin-hint">
+                  {data.notes.map((note) => (
+                    <li key={note}>{note}</li>
+                  ))}
+                </ul>
+              )}
+              {data.products.length === 0 ? (
+                <p>No Gelato products yet. Create them in Gelato, then refresh.</p>
+              ) : (
+                <ul className="store-admin-list">
+                  {data.products.map((product) => (
+                    <li key={product.id} className="store-admin-product">
+                      {product.previewUrl ? (
+                        <img src={product.previewUrl} alt="" className="admin-photo-row__thumb" />
+                      ) : (
+                        <span className="admin-photo-row__thumb store-card__fallback" />
+                      )}
+                      <div>
+                        <strong>{product.title}</strong>
+                        <p className="admin-hint">
+                          {product.source} · {product.status || 'active'} · {product.variantCount} variant
+                          {product.variantCount === 1 ? '' : 's'}
+                          {product.productType ? ` · ${product.productType}` : ''}
+                          {product.status === 'publishing'
+                            ? ' · Gelato is still publishing this product'
+                            : product.status === 'publishing_error'
+                              ? ' · Gelato could not publish this product'
+                              : ''}
+                        </p>
+                        <p>
+                          {product.pricePending && product.wholesaleCents == null
+                            ? 'Loading Gelato cost…'
+                            : product.wholesaleCents == null
+                              ? 'Gelato did not return a US price'
+                              : `Gelato cost ${formatUsd(product.wholesaleCents)} · customer ${formatUsd(product.retailCents ?? 0)}`}
+                        </p>
+                        {!product.hasPrintFile && (
+                          <p className="admin-hint">
+                            Gelato did not attach a print file. Orders are still sent, and Gelato rejects them if the
+                            design is not already stored on the product.
+                          </p>
+                        )}
+                        <label className="admin-check">
+                          <input type="checkbox" checked={product.enabled} onChange={() => void toggle(product)} />
+                          Show in the store
+                        </label>
+                        <label>
+                          Store description
+                          <textarea
+                            rows={4}
+                            value={drafts[product.id] ?? product.description}
+                            onChange={(event) =>
+                              setDrafts((current) => ({ ...current, [product.id]: event.target.value }))
+                            }
+                          />
+                        </label>
+                        <p className="admin-hint">
+                          {product.descriptionSource === 'openai'
+                            ? 'Written with OpenAI. You can edit it.'
+                            : product.descriptionSource === 'edited'
+                              ? 'Edited in this admin.'
+                              : 'Showing the Gelato description.'}
+                          {product.imageCount > 1 ? ` ${product.imageCount} images from Gelato.` : ''}
+                        </p>
+                        <div className="store-actions">
+                          <button type="button" className="btn btn--ghost" disabled={busy} onClick={() => void saveDescription(product)}>
+                            Save description
+                          </button>
+                          <button type="button" className="text-link" disabled={busy} onClick={() => void writeDescriptions(product.id)}>
+                            Rewrite with OpenAI
+                          </button>
+                        </div>
+                        {(groups.categories.length > 0 || groups.collections.length > 0) && (
+                          <div className="store-assign">
+                            {groups.categories.map((group) => (
+                              <label key={group.id} className="admin-check">
+                                <input
+                                  type="checkbox"
+                                  checked={group.productIds.includes(product.id)}
+                                  onChange={(event) =>
+                                    void setMembership(product, 'categories', group.id, event.target.checked)
+                                  }
+                                />
+                                {group.name}
+                              </label>
+                            ))}
+                            {groups.collections.map((group) => (
+                              <label key={group.id} className="admin-check">
+                                <input
+                                  type="checkbox"
+                                  checked={group.productIds.includes(product.id)}
+                                  onChange={(event) =>
+                                    void setMembership(product, 'collections', group.id, event.target.checked)
+                                  }
+                                />
+                                Collection: {group.name}
+                              </label>
+                            ))}
+                          </div>
+                        )}
                       </div>
-                    )}
-                  </div>
-                </li>
-              ))}
-            </ul>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
           )}
-          <h3>Recent orders</h3>
-          {data.orders.length === 0 ? (
-            <p className="admin-hint">No orders yet.</p>
-          ) : (
-            <ul className="store-orders">
-              {data.orders.map((order) => (
-                <li key={order.id}>
-                  <strong>{order.status.replaceAll('_', ' ')}</strong>
-                  <span>{new Date(order.createdAt).toLocaleString()}</span>
-                  <span>{order.email}</span>
-                  <span>{formatUsd(order.totalCents)}</span>
-                  <span>{order.itemSummary}</span>
-                  {order.gelatoOrderIds.length > 0 && <span>Gelato {order.gelatoOrderIds.join(', ')}</span>}
-                  {order.gelatoError && <span className="admin-error">{order.gelatoError}</span>}
-                  <button type="button" className="text-link" disabled={busy} onClick={() => void sync(order)}>
-                    Sync payment and send to Gelato
+
+          {section === 'catalog' && (
+            <div className="store-admin-split">
+              <div className="store-admin-pane">
+                <h3>Categories</h3>
+                <p className="admin-hint">Departments in the shop, such as Prints or Calendars.</p>
+                <form className="admin-form" onSubmit={(event) => void addGroup(event, 'categories')}>
+                  <label>
+                    New category
+                    <input
+                      value={categoryName}
+                      onChange={(event) => setCategoryName(event.target.value)}
+                      placeholder="Prints"
+                      maxLength={60}
+                      required
+                    />
+                  </label>
+                  <button className="btn btn--accent" type="submit" disabled={busy}>
+                    Add category
                   </button>
+                </form>
+                {groups.categories.length === 0 ? (
+                  <p className="admin-hint">No categories yet.</p>
+                ) : (
+                  <ul className="store-orders">
+                    {groups.categories.map((group) => (
+                      <li key={group.id}>
+                        <strong>{group.name}</strong>
+                        <span>{group.productIds.length} products</span>
+                        <button
+                          type="button"
+                          className="text-link"
+                          disabled={busy}
+                          onClick={() => void removeGroup('categories', group)}
+                        >
+                          Remove
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+              <div className="store-admin-pane">
+                <h3>Collections</h3>
+                <p className="admin-hint">Curated groups, such as a season or a gift set.</p>
+                <form className="admin-form" onSubmit={(event) => void addGroup(event, 'collections')}>
+                  <label>
+                    New collection
+                    <input
+                      value={collectionName}
+                      onChange={(event) => setCollectionName(event.target.value)}
+                      placeholder="Spring gifts"
+                      maxLength={60}
+                      required
+                    />
+                  </label>
+                  <button className="btn btn--accent" type="submit" disabled={busy}>
+                    Add collection
+                  </button>
+                </form>
+                {groups.collections.length === 0 ? (
+                  <p className="admin-hint">No collections yet.</p>
+                ) : (
+                  <ul className="store-orders">
+                    {groups.collections.map((group) => (
+                      <li key={group.id}>
+                        <strong>{group.name}</strong>
+                        <span>{group.productIds.length} products</span>
+                        <button
+                          type="button"
+                          className="text-link"
+                          disabled={busy}
+                          onClick={() => void removeGroup('collections', group)}
+                        >
+                          Remove
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            </div>
+          )}
+
+          {section === 'coupons' && (
+            <div>
+              <p className="admin-hint">
+                A coupon removes a percent of the print and shipping markup. Gelato’s cost is never discounted. 100%
+                means the customer pays Gelato’s price.
+              </p>
+              <form className="admin-grid" onSubmit={(event) => void addCoupon(event)}>
+                <label>
+                  Code
+                  <input
+                    value={couponCode}
+                    onChange={(event) => setCouponCode(event.target.value)}
+                    placeholder="SPRING"
+                    maxLength={24}
+                    required
+                  />
+                </label>
+                <label>
+                  Percent of markup
+                  <input
+                    inputMode="numeric"
+                    value={couponPercent}
+                    onChange={(event) => setCouponPercent(event.target.value)}
+                    min={1}
+                    max={100}
+                    required
+                  />
+                </label>
+                <div className="admin-span-2">
+                  <button className="btn btn--accent" type="submit" disabled={busy}>
+                    Add coupon
+                  </button>
+                </div>
+              </form>
+              {(data.coupons ?? []).length === 0 ? (
+                <p className="admin-hint">No coupon codes yet.</p>
+              ) : (
+                <ul className="store-orders">
+                  {(data.coupons ?? []).map((coupon) => (
+                    <li key={coupon.code}>
+                      <strong>{coupon.code}</strong>
+                      <span>{coupon.percent}% off the markup</span>
+                      <label className="admin-check">
+                        <input
+                          type="checkbox"
+                          checked={coupon.active}
+                          onChange={() => void setCouponActive(coupon, !coupon.active)}
+                        />
+                        Active
+                      </label>
+                      <button type="button" className="text-link" disabled={busy} onClick={() => void removeCoupon(coupon)}>
+                        Remove
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          )}
+
+          {section === 'orders' && (
+            <div>
+              <p className="admin-hint">
+                Stripe emails the receipt. Gelato prints, ships, and emails tracking. Sync a paid order here if it has
+                not reached Gelato yet.
+              </p>
+              {data.orders.length === 0 ? (
+                <p className="admin-hint">No orders yet.</p>
+              ) : (
+                <ul className="store-orders">
+                  {data.orders.map((order) => (
+                    <li key={order.id}>
+                      <strong>{order.status.replaceAll('_', ' ')}</strong>
+                      <span>{new Date(order.createdAt).toLocaleString()}</span>
+                      <span>{order.email}</span>
+                      <span>{formatUsd(order.totalCents)}</span>
+                      <span>{order.itemSummary}</span>
+                      {order.gelatoOrderIds.length > 0 && <span>Gelato {order.gelatoOrderIds.join(', ')}</span>}
+                      {order.gelatoError && <span className="admin-error">{order.gelatoError}</span>}
+                      <button type="button" className="text-link" disabled={busy} onClick={() => void sync(order)}>
+                        Sync payment and send to Gelato
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          )}
+
+          {section === 'settings' && (
+            <div>
+              <p className="admin-hint">
+                Gelato’s price is what Gelato charges this account. Markup is added for the customer. Stripe takes the
+                card payment.
+              </p>
+              <ul className="store-secrets">
+                <li>{data.secrets.gelato ? 'Gelato API key is set' : 'Missing GELATO_API_KEY'}</li>
+                <li>{data.secrets.stripeSecret ? 'Stripe secret key is set' : 'Missing STRIPE_SECRET_KEY'}</li>
+                <li>
+                  {data.secrets.stripePublishable ? 'Stripe publishable key is set' : 'Missing STRIPE_PUBLISHABLE_KEY'}
                 </li>
-              ))}
-            </ul>
+                <li>
+                  {data.secrets.stripeWebhook
+                    ? 'Stripe webhook secret is set'
+                    : 'STRIPE_WEBHOOK_SECRET is not set yet. Payments can still complete from the order page.'}
+                </li>
+                <li>
+                  {data.secrets.openai
+                    ? data.secrets.openaiSource === 'cloudflare'
+                      ? 'OpenAI key is set as a Cloudflare secret'
+                      : 'OpenAI key is saved in store settings'
+                    : 'OpenAI is not connected yet'}
+                </li>
+              </ul>
+              <div className="store-actions">
+                <button type="button" className="btn btn--ghost" disabled={testing} onClick={() => void testConnections()}>
+                  {testing ? 'Testing connections…' : 'Test connections'}
+                </button>
+              </div>
+              {checks && (
+                <ul className="store-checks">
+                  {checks.map((item) => (
+                    <li key={item.id} className={`is-${item.status}`}>
+                      <strong>{item.name}.</strong> {item.detail}
+                    </li>
+                  ))}
+                </ul>
+              )}
+              <form className="admin-grid" onSubmit={(event) => void saveSettings(event)}>
+                <label>
+                  Print markup %
+                  <input inputMode="decimal" value={markup} onChange={(event) => setMarkup(event.target.value)} />
+                </label>
+                <label>
+                  Shipping markup %
+                  <input
+                    inputMode="decimal"
+                    value={shippingMarkup}
+                    onChange={(event) => setShippingMarkup(event.target.value)}
+                  />
+                </label>
+                <label className="admin-span-2">
+                  Gelato store id
+                  <input
+                    value={storeId}
+                    onChange={(event) => setStoreId(event.target.value)}
+                    placeholder="From the store URL in the Gelato dashboard"
+                  />
+                </label>
+                <label className="admin-span-2">
+                  OpenAI API key
+                  <input
+                    type="password"
+                    value={openaiKey}
+                    onChange={(event) => setOpenaiKey(event.target.value)}
+                    placeholder={data.secrets.openai ? 'A key is already saved' : 'sk-...'}
+                    autoComplete="off"
+                  />
+                </label>
+                <label className="admin-check admin-span-2">
+                  <input type="checkbox" checked={clearOpenai} onChange={(event) => setClearOpenai(event.target.checked)} />
+                  Remove the saved OpenAI key
+                </label>
+                <p className="admin-hint admin-span-2">
+                  OpenAI rewrites Gelato’s description using the product name, options, and preview image. A Cloudflare
+                  secret named OPENAI_API_KEY is used first if it is set. The key is not shown again after you save it.
+                </p>
+                <label className="admin-span-2">
+                  Template ids
+                  <textarea
+                    rows={3}
+                    value={templateIds}
+                    onChange={(event) => setTemplateIds(event.target.value)}
+                    placeholder="One Gelato template id per line, if products were saved as templates"
+                  />
+                </label>
+                <div className="admin-span-2 store-actions">
+                  <button className="btn btn--accent" type="submit" disabled={busy}>
+                    Save settings
+                  </button>
+                </div>
+              </form>
+            </div>
           )}
         </>
       )}

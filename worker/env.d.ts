@@ -10,4 +10,5 @@ interface Env {
   STRIPE_SECRET_KEY?: string
   STRIPE_PUBLISHABLE_KEY?: string
   STRIPE_WEBHOOK_SECRET?: string
+  OPENAI_API_KEY?: string
 }

@@ -60,7 +60,7 @@ export function StoreCartPage() {
             ))}
           </ul>
           <p className="store-total">
-            Estimated prints <strong>{formatUsd(subtotal)}</strong>
+            Subtotal <strong>{formatUsd(subtotal)}</strong>
           </p>
           <p className="store-note">Shipping and tax are calculated at checkout from Gelato and Stripe.</p>
           <Link className="btn btn--accent" to="/store/checkout">

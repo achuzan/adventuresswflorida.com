@@ -2,7 +2,7 @@ import { asArray, GelatoError, gelatoRequest } from './gelato'
 import type { StoreSettings } from './store-data'
 
 export type ConnectionCheck = {
-  id: 'gelato' | 'gelato-store' | 'stripe' | 'stripe-publishable' | 'stripe-webhook'
+  id: 'gelato' | 'gelato-store' | 'stripe' | 'stripe-publishable' | 'stripe-webhook' | 'openai'
   name: string
   status: 'ok' | 'warn' | 'fail'
   detail: string

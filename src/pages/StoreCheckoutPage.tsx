@@ -12,6 +12,7 @@ import {
   usStates,
   validateAddress,
   type CheckoutResponse,
+  type QuoteLinePublic,
   type QuoteResponse,
   type ShippingAddress,
 } from '../shared/store'
@@ -232,38 +233,28 @@ export function StoreCheckoutPage() {
           </label>
 
           {quote && (
-            <fieldset className="store-shipping">
-              <legend>Shipping</legend>
-              {quote.shipping.length === 0 && <p>No shipping methods were returned for that address.</p>}
-              {quote.shipping.map((option) => (
-                <label key={option.id} className="store-ship">
-                  <input
-                    type="radio"
-                    name="shipping"
-                    value={option.id}
-                    checked={shippingOptionId === option.id}
-                    onChange={() => setShippingOptionId(option.id)}
-                  />
-                  <span>
-                    {option.label}
+            <>
+              <fieldset className="store-shipping">
+                <legend>Shipping</legend>
+                {quote.shipping.length === 0 && <p>No shipping methods were returned for that address.</p>}
+                {quote.shipping.map((option) => (
+                  <label key={option.id} className="store-ship">
+                    <input
+                      type="radio"
+                      name="shipping"
+                      value={option.id}
+                      checked={shippingOptionId === option.id}
+                      onChange={() => setShippingOptionId(option.id)}
+                    />
+                    <span>{option.label}</span>
                     <strong>{formatUsd(option.priceCents)}</strong>
-                  </span>
-                </label>
-              ))}
+                  </label>
+                ))}
+              </fieldset>
               <ul className="store-summary">
                 {quote.lines.map((line) => (
-                  <li key={`${line.productId}:${line.variantId}`}>
-                    <span>
-                      {line.quantity}× {line.title}
-                      {line.variantTitle ? ` (${line.variantTitle})` : ''}
-                    </span>
-                    <span>{formatUsd(line.linePriceCents)}</span>
-                  </li>
+                  <SummaryLine key={`${line.productId}:${line.variantId}`} line={line} />
                 ))}
-                <li>
-                  <span>Prints</span>
-                  <span>{formatUsd(quote.subtotalCents)}</span>
-                </li>
                 {quote.coupon && (
                   <li>
                     <span>
@@ -278,7 +269,7 @@ export function StoreCheckoutPage() {
                   </li>
                 )}
               </ul>
-            </fieldset>
+            </>
           )}
 
           {error && <p className="store-error">{error}</p>}
@@ -288,6 +279,18 @@ export function StoreCheckoutPage() {
         </form>
       )}
     </div>
+  )
+}
+
+function SummaryLine({ line }: { line: QuoteLinePublic }) {
+  return (
+    <li>
+      <span>
+        {line.quantity}× {line.title}
+        {line.variantTitle ? <small>{line.variantTitle}</small> : null}
+      </span>
+      <span>{formatUsd(line.linePriceCents)}</span>
+    </li>
   )
 }
 
@@ -328,17 +331,8 @@ function PayStep({ payment, onEdit }: { payment: CheckoutResponse; onEdit: () =>
     <form className="store-form" onSubmit={(event) => void pay(event)}>
       <ul className="store-summary">
         {payment.lines.map((line) => (
-          <li key={`${line.productId}:${line.variantId}`}>
-            <span>
-              {line.quantity}× {line.title}
-            </span>
-            <span>{formatUsd(line.linePriceCents)}</span>
-          </li>
+          <SummaryLine key={`${line.productId}:${line.variantId}`} line={line} />
         ))}
-        <li>
-          <span>Prints</span>
-          <span>{formatUsd(payment.subtotalCents)}</span>
-        </li>
         <li>
           <span>{payment.shippingLabel}</span>
           <span>{formatUsd(payment.shippingCents)}</span>

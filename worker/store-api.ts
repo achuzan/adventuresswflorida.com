@@ -1,4 +1,5 @@
 import { isAuthenticated } from './auth'
+import { testOpenAiKey, writeProductDescription } from './openai'
 import { testConnections } from './connection-tests'
 import {
   createGelatoOrder,
@@ -22,11 +23,13 @@ import {
   ensurePrices,
   couponPercent,
   getCoupons,
+  getCopy,
   getGroups,
   getOrder,
   getSettings,
   listOrders,
   saveCoupons,
+  saveCopy,
   saveGroups,
   assignProduct,
   groupSlug,
@@ -35,6 +38,7 @@ import {
   saveSettings,
   writeCatalog,
   type OrderLeg,
+  type ProductCopy,
   type StoreCoupon,
   type StoreGroup,
   type StoreGroups,
@@ -46,6 +50,7 @@ import {
   isCouponCode,
   markupDiscountCents,
   normalizeCouponCode,
+  sanitizeHtml,
   toCents,
   validateAddress,
   withMarkup,
@@ -119,19 +124,34 @@ async function loadCatalog(env: Env, refresh: boolean) {
   }
 }
 
+function productImages(product: InternalProduct) {
+  const images: string[] = []
+  const extra = Array.isArray(product.images) ? product.images : []
+  for (const url of [product.previewUrl, ...extra, ...product.variants.map((variant) => variant.previewUrl)]) {
+    if (url && !images.includes(url)) images.push(url)
+  }
+  return images.slice(0, 12)
+}
+
+function shownDescription(product: InternalProduct, copy: Record<string, ProductCopy>) {
+  return copy[product.id]?.description || product.description
+}
+
 function toPublic(
   product: InternalProduct,
   markupPercent: number,
   prices: Map<string, number | null>,
   categoryIds: string[],
+  copy: Record<string, ProductCopy>,
 ): StoreProductPublic {
   return {
     id: product.id,
     title: product.title,
-    description: product.description,
+    description: shownDescription(product, copy),
     previewUrl: product.previewUrl,
     productType: product.productType,
     options: product.options,
+    images: productImages(product),
     categoryIds,
     variants: product.variants.map((variant) => {
       const wholesale = prices.get(variant.productUid)
@@ -584,6 +604,7 @@ async function adminPayload(env: Env, refresh: boolean) {
   const uids = catalog.products.flatMap((product) => product.variants.map((variant) => variant.productUid))
   const prices = env.GELATO_API_KEY ? await ensurePrices(env.PHOTOS_KV, env.GELATO_API_KEY, uids, 10) : new Map()
   const orders = await listOrders(env.PHOTOS_KV, 15)
+  const copy = await getCopy(env.PHOTOS_KV)
   return {
     settings: {
       markupPercent: settings.markupPercent,
@@ -602,6 +623,8 @@ async function adminPayload(env: Env, refresh: boolean) {
       stripeSecret: Boolean(env.STRIPE_SECRET_KEY),
       stripePublishable: Boolean(publishableKey(env)),
       stripeWebhook: Boolean(env.STRIPE_WEBHOOK_SECRET),
+      openai: Boolean(env.OPENAI_API_KEY || settings.openaiKey),
+      openaiSource: env.OPENAI_API_KEY ? 'cloudflare' : settings.openaiKey ? 'admin' : 'none',
     },
     products: catalog.products.map((product) => {
       const wholesale = lowestWholesale(product, prices)
@@ -616,6 +639,9 @@ async function adminPayload(env: Env, refresh: boolean) {
         sellable: isSellable(product),
         variantCount: product.variants.length,
         hasPrintFile: product.variants.some((variant) => variant.files.length > 0),
+        imageCount: productImages(product).length,
+        description: shownDescription(product, copy),
+        descriptionSource: copy[product.id]?.source ?? 'gelato',
         pricePending: product.variants.some((variant) => !prices.has(variant.productUid)),
         wholesaleCents: wholesale,
         retailCents: wholesale == null ? null : withMarkup(wholesale, settings.markupPercent),
@@ -673,6 +699,7 @@ export async function handleStoreRequest(request: Request, env: Env) {
     const collectionMatch = /^\/api\/admin\/store\/collections\/([a-z0-9-]{2,40})$/.exec(path)
     if (collectionMatch && request.method === 'PATCH') return await adminUpdateGroup(request, env, 'collections', collectionMatch[1]!)
     if (collectionMatch && request.method === 'DELETE') return await adminDeleteGroup(request, env, 'collections', collectionMatch[1]!)
+    if (path === '/api/admin/store/descriptions' && request.method === 'POST') return await adminDescriptions(request, env)
     const toggle = /^\/api\/admin\/store\/products\/([A-Za-z0-9_-]{8,80})$/.exec(path)
     if (toggle && request.method === 'PATCH') return await adminToggle(request, env, toggle[1]!)
     const sync = /^\/api\/admin\/store\/orders\/(ord_[A-Za-z0-9_-]{8,80})\/sync$/.exec(path)
@@ -703,6 +730,7 @@ function publicGroups(groups: StoreGroups) {
 async function publicList(env: Env) {
   const settings = await getSettings(env.PHOTOS_KV)
   const groups = await getGroups(env.PHOTOS_KV)
+  const copy = await getCopy(env.PHOTOS_KV)
   const catalog = await loadCatalog(env, false)
   const visible = catalog.products.filter((product) => settings.enabled[product.id] === true && isSellable(product))
   const prices = env.GELATO_API_KEY
@@ -714,7 +742,7 @@ async function publicList(env: Env) {
       )
     : new Map<string, number | null>()
   const products = visible.map((product) =>
-    toPublic(product, settings.markupPercent, prices, categoryIdsFor(groups, product.id)),
+    toPublic(product, settings.markupPercent, prices, categoryIdsFor(groups, product.id), copy),
   )
   return json({
     products,
@@ -726,6 +754,7 @@ async function publicList(env: Env) {
 async function publicOne(env: Env, id: string) {
   const settings = await getSettings(env.PHOTOS_KV)
   const groups = await getGroups(env.PHOTOS_KV)
+  const copy = await getCopy(env.PHOTOS_KV)
   const catalog = await loadCatalog(env, false)
   const product = catalog.products.find((item) => item.id === id)
   if (!product || settings.enabled[product.id] !== true || !isSellable(product)) {
@@ -739,7 +768,7 @@ async function publicOne(env: Env, id: string) {
         20,
       )
     : new Map<string, number | null>()
-  const pub = toPublic(product, settings.markupPercent, prices, categoryIdsFor(groups, product.id))
+  const pub = toPublic(product, settings.markupPercent, prices, categoryIdsFor(groups, product.id), copy)
   return json({
     product: pub,
     categories: groups.categories
@@ -932,6 +961,18 @@ async function adminTest(request: Request, env: Env) {
   await requireAdmin(request, env)
   const settings = await getSettings(env.PHOTOS_KV)
   const checks = await testConnections(env, settings, configuredStoreIds(env, settings))
+  const openai = env.OPENAI_API_KEY?.trim() || settings.openaiKey
+  if (!openai) {
+    checks.push({
+      id: 'openai',
+      name: 'OpenAI',
+      status: 'warn',
+      detail: 'No OpenAI API key yet. Add one in store settings to write product descriptions.',
+    })
+  } else {
+    const result = await testOpenAiKey(openai)
+    checks.push({ id: 'openai', name: 'OpenAI', status: result.ok ? 'ok' : 'fail', detail: result.detail })
+  }
   return json({ checks })
 }
 
@@ -975,6 +1016,14 @@ async function adminSettings(request: Request, env: Env) {
     }
     if (templateIds.length > 50) throw new HttpError(400, 'Paste up to 50 template ids')
     settings.templateIds = templateIds
+  }
+  if (body.clearOpenaiKey === true) settings.openaiKey = ''
+  else if (typeof body.openaiKey === 'string' && body.openaiKey.trim()) {
+    const key = body.openaiKey.trim()
+    if (!key.startsWith('sk-') || key.length < 20 || key.length > 200) {
+      throw new HttpError(400, 'The OpenAI key should start with sk-')
+    }
+    settings.openaiKey = key
   }
   await saveSettings(env.PHOTOS_KV, settings)
   return json(await adminPayload(env, false))
@@ -1069,6 +1118,7 @@ async function adminToggle(request: Request, env: Env, id: string) {
     enabled?: unknown
     categoryIds?: unknown
     collectionIds?: unknown
+    description?: unknown
   }
   const settings = await getSettings(env.PHOTOS_KV)
   if ('enabled' in body) {
@@ -1085,7 +1135,42 @@ async function adminToggle(request: Request, env: Env, id: string) {
     }
     groups = await saveGroups(env.PHOTOS_KV, groups)
   }
+  if ('description' in body) {
+    const copy = await getCopy(env.PHOTOS_KV)
+    const text = typeof body.description === 'string' ? sanitizeHtml(body.description).trim().slice(0, 4000) : ''
+    if (!text) delete copy[id]
+    else copy[id] = { description: text, source: 'edited', updatedAt: new Date().toISOString() }
+    await saveCopy(env.PHOTOS_KV, copy)
+  }
   return json({ ok: true, enabled: settings.enabled[id] === true, groups })
+}
+
+function resolvedOpenAiKey(env: Env, settings: StoreSettings) {
+  return env.OPENAI_API_KEY?.trim() || settings.openaiKey
+}
+
+async function adminDescriptions(request: Request, env: Env) {
+  await requireAdmin(request, env)
+  const body = (await readJson(request)) as { productId?: unknown }
+  const settings = await getSettings(env.PHOTOS_KV)
+  const key = resolvedOpenAiKey(env, settings)
+  if (!key) throw new HttpError(400, 'Add an OpenAI API key in store settings first')
+  const catalog = await loadCatalog(env, false)
+  const copy = await getCopy(env.PHOTOS_KV)
+  const requested = typeof body.productId === 'string' ? body.productId : ''
+  const targets = requested
+    ? catalog.products.filter((product) => product.id === requested).slice(0, 1)
+    : catalog.products.filter((product) => !copy[product.id]).slice(0, 4)
+  if (requested && !targets.length) return json({ error: 'That product is not in the Gelato catalog' }, 404)
+  const updated: { id: string; title: string; description: string }[] = []
+  for (const product of targets) {
+    const description = await writeProductDescription(key, product)
+    copy[product.id] = { description, source: 'openai', updatedAt: new Date().toISOString() }
+    updated.push({ id: product.id, title: product.title, description })
+  }
+  if (updated.length) await saveCopy(env.PHOTOS_KV, copy)
+  const remaining = catalog.products.filter((product) => !copy[product.id]).length
+  return json({ updated, remaining })
 }
 
 async function adminSync(request: Request, env: Env, orderId: string) {

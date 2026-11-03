@@ -106,15 +106,11 @@ export function StoreOrderPage() {
               <li key={`${item.title}-${index}`}>
                 <span>
                   {item.quantity}× {item.title}
-                  {item.variantTitle ? ` (${item.variantTitle})` : ''}
+                  {item.variantTitle ? <small>{item.variantTitle}</small> : null}
                 </span>
                 <span>{formatUsd(item.linePriceCents)}</span>
               </li>
             ))}
-            <li>
-              <span>Prints</span>
-              <span>{formatUsd(order.subtotalCents)}</span>
-            </li>
             <li>
               <span>{order.shippingLabel}</span>
               <span>{formatUsd(order.shippingCents)}</span>

@@ -26,6 +26,7 @@ export type StoreProductPublic = {
   previewUrl: string
   productType: string
   options: StoreOptionGroup[]
+  images: string[]
   variants: StoreVariantPublic[]
   categoryIds: string[]
 }

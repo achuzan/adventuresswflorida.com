@@ -17,6 +17,7 @@ export function StoreProductPage() {
   const [variantId, setVariantId] = useState('')
   const [quantity, setQuantity] = useState(1)
   const [added, setAdded] = useState(false)
+  const [activeImage, setActiveImage] = useState('')
   const prepared = useRef('')
 
   useEffect(() => {
@@ -59,8 +60,7 @@ export function StoreProductPage() {
 
   const variant = product
     ? product.options.length > 0
-      ? variantForSelection(product.variants, selected) ??
-        product.variants.find((item) => item.id === variantId)
+      ? variantForSelection(product.variants, selected) ?? product.variants.find((item) => item.id === variantId)
       : product.variants.find((item) => item.id === variantId) ?? product.variants[0]
     : undefined
 
@@ -75,13 +75,21 @@ export function StoreProductPage() {
     setVariantId(first.id)
     setQuantity(1)
     setAdded(false)
+    setActiveImage(first.previewUrl || product.images?.[0] || product.previewUrl)
   }, [product])
+
+  useEffect(() => {
+    const next = variant?.previewUrl
+    if (next) setActiveImage(next)
+  }, [variant?.id, variant?.previewUrl])
 
   function chooseOption(name: string, value: string) {
     if (!product) return
     const next = { ...selected, [name]: value }
-    if (variantForSelection(product.variants, next)) {
+    const match = variantForSelection(product.variants, next)
+    if (match) {
       setSelected(next)
+      setVariantId(match.id)
       setAdded(false)
       return
     }
@@ -113,13 +121,15 @@ export function StoreProductPage() {
     setAdded(true)
   }
 
-  const image = variant?.previewUrl || product?.previewUrl
+  const images = product?.images?.length ? product.images : product?.previewUrl ? [product.previewUrl] : []
+  const image = activeImage || images[0] || ''
   const category = categories[0]
+  const optionSummary = variant?.options.map((option) => option.value).filter(Boolean).join(', ')
 
   return (
-    <div className="page page--store">
+    <div className="page page--store page--product">
       <SeoHead
-        title={product ? `${product.title} Â· Store Â· ${site.shortBrand}` : `Store Â· ${site.shortBrand}`}
+        title={product ? `${product.title} - Store - ${site.shortBrand}` : `Store - ${site.shortBrand}`}
         description={product?.title ? `${product.title} from Adventures in Southwest Florida, printed to order.` : 'Store product'}
         path={`/store/${productId}`}
         image={image || undefined}
@@ -134,7 +144,7 @@ export function StoreProductPage() {
         )}
         {product && <span> / {product.title}</span>}
       </p>
-      {loading && !product && <p className="store-status">Loading productâ€¦</p>}
+      {loading && !product && <p className="store-status">Loading product...</p>}
       {error && (
         <p className="store-error">
           {error} <Link to="/store">Back to the store</Link>
@@ -142,6 +152,20 @@ export function StoreProductPage() {
       )}
       {product && (
         <article className="store-product">
+          {images.length > 1 && (
+            <div className="store-thumbs" aria-label="Product images">
+              {images.map((src) => (
+                <button
+                  key={src}
+                  type="button"
+                  className={src === image ? 'is-selected' : ''}
+                  onClick={() => setActiveImage(src)}
+                >
+                  <img src={src} alt="" />
+                </button>
+              ))}
+            </div>
+          )}
           <div className="store-product__stage">
             {image ? (
               <img className="store-product__photo" src={image} alt={product.title} />
@@ -150,21 +174,26 @@ export function StoreProductPage() {
             )}
           </div>
           <div className="store-buy">
-            {category && <p className="eyebrow">{category.name}</p>}
+            {category && <p className="store-kicker">{category.name}</p>}
             <h1>{product.title}</h1>
             <p className="store-product__price">
               {variant?.pricePending && variant.priceCents == null
-                ? 'Pricingâ€¦'
+                ? 'Pricing...'
                 : variant?.priceCents == null
                   ? 'Price unavailable'
                   : formatUsd(variant.priceCents)}
             </p>
+            <p className="store-stock">Printed to order</p>
             <p className="store-note">Print price before shipping and tax. Checkout confirms the price for your address.</p>
+            {optionSummary && <p className="store-note">Selected: {optionSummary}</p>}
             <div className="store-options">
               {product.options.length > 0
                 ? product.options.map((group) => (
                     <fieldset key={group.name}>
-                      <legend>{group.name}</legend>
+                      <legend>
+                        {group.name}
+                        {selected[group.name] ? `: ${selected[group.name]}` : ''}
+                      </legend>
                       {group.values.length > 8 ? (
                         <select
                           value={selected[group.name] ?? ''}
@@ -195,13 +224,21 @@ export function StoreProductPage() {
                 : product.variants.length > 1 && (
                     <fieldset>
                       <legend>Option</legend>
-                      <select value={variantId} onChange={(event) => setVariantId(event.target.value)}>
+                      <div className="store-pills">
                         {product.variants.map((item) => (
-                          <option key={item.id} value={item.id}>
+                          <button
+                            key={item.id}
+                            type="button"
+                            className={item.id === (variant?.id ?? variantId) ? 'is-selected' : ''}
+                            onClick={() => {
+                              setVariantId(item.id)
+                              setAdded(false)
+                            }}
+                          >
                             {item.title}
-                          </option>
+                          </button>
                         ))}
-                      </select>
+                      </div>
                     </fieldset>
                   )}
             </div>
@@ -237,9 +274,14 @@ export function StoreProductPage() {
               <li>Tax calculated for your address</li>
             </ul>
           </div>
-          {product.description && (
-            <div className="store-copy store-product__copy" dangerouslySetInnerHTML={{ __html: product.description }} />
-          )}
+          <section className="store-product__copy">
+            <h2>About this item</h2>
+            {product.description ? (
+              <div className="store-copy" dangerouslySetInnerHTML={{ __html: product.description }} />
+            ) : (
+              <p>Printed to order from a photograph by Brad Kemp.</p>
+            )}
+          </section>
         </article>
       )}
     </div>

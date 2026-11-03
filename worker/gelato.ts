@@ -17,6 +17,7 @@ export type InternalVariant = {
   productUid: string
   options: { name: string; value: string }[]
   previewUrl: string
+  images: string[]
   files: PrintFile[]
 }
 
@@ -29,6 +30,7 @@ export type InternalProduct = {
   productType: string
   status: string
   options: { name: string; values: string[] }[]
+  images: string[]
   variants: InternalVariant[]
 }
 
@@ -141,6 +143,32 @@ function httpsUrl(value: unknown) {
   return url.startsWith('https://') ? url : ''
 }
 
+function pushUrl(into: string[], value: unknown) {
+  const url = httpsUrl(value)
+  if (url && !into.includes(url)) into.push(url)
+}
+
+function collectImageUrls(record: Record<string, unknown>) {
+  const images: string[] = []
+  for (const key of ['previewUrl', 'externalPreviewUrl', 'externalThumbnailUrl', 'imageUrl', 'thumbnailUrl']) {
+    pushUrl(images, record[key])
+  }
+  for (const key of ['images', 'previews', 'previewImages']) {
+    const list = record[key]
+    if (!Array.isArray(list)) continue
+    for (const item of list) {
+      if (typeof item === 'string') pushUrl(images, item)
+      else if (isRecord(item)) {
+        pushUrl(images, item.previewUrl)
+        pushUrl(images, item.thumbnailUrl)
+        pushUrl(images, item.imageUrl)
+        pushUrl(images, item.url)
+      }
+    }
+  }
+  return images
+}
+
 function fileType(printArea: string, name: string) {
   const raw = (printArea || name || 'default').toLowerCase()
   const known = new Set([
@@ -187,7 +215,7 @@ function collectFiles(record: Record<string, unknown>) {
 }
 
 function readGroups(record: Record<string, unknown>) {
-  const raw = record.productVariantOptions ?? record.variantOptions
+  const raw = record.productVariantOptions ?? record.variantOptions ?? record.options ?? record.attributes
   if (!Array.isArray(raw)) return []
   return raw.flatMap((item) => {
     if (!isRecord(item)) return []
@@ -228,6 +256,14 @@ function readVariantOptions(
   return optionsFromTitle(title, groups)
 }
 
+function uniqueImages(extra: string[], variants: InternalVariant[]) {
+  const images: string[] = []
+  for (const url of [...extra, ...variants.flatMap((variant) => [variant.previewUrl, ...variant.images])]) {
+    if (url && !images.includes(url)) images.push(url)
+  }
+  return images.slice(0, 12)
+}
+
 function groupsFromVariants(variants: InternalVariant[]) {
   const map = new Map<string, string[]>()
   for (const variant of variants) {
@@ -264,6 +300,7 @@ function normalizeVariants(
         httpsUrl(row.imageUrl) ||
         httpsUrl(row.externalPreviewUrl) ||
         fallbackPreview,
+      images: collectImageUrls(row),
       files: collectFiles(row),
     })
   }
@@ -289,6 +326,7 @@ export function normalizeStoreProduct(row: unknown): InternalProduct | null {
     productType: str(row.productType),
     status: str(row.status) || 'active',
     options: groups.length ? groups : groupsFromVariants(variants),
+    images: uniqueImages(collectImageUrls(row), variants),
     variants,
   }
 }
@@ -310,6 +348,7 @@ export function normalizeTemplate(row: unknown): InternalProduct | null {
     productType: str(row.productType),
     status: 'active',
     options: groupsFromVariants(variants),
+    images: uniqueImages(collectImageUrls(row), variants),
     variants,
   }
 }

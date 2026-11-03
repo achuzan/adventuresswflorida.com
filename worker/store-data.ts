@@ -5,6 +5,7 @@ import { fetchUnitWholesaleCents, mapPool } from './gelato'
 const SETTINGS_KEY = 'store:settings'
 const COUPONS_KEY = 'store:coupons'
 const GROUPS_KEY = 'store:groups'
+const COPY_KEY = 'store:copy'
 const CATALOG_KEY = 'store:catalog'
 const PRICE_KEY = 'store:prices'
 const ORDER_INDEX = 'store:order-index'
@@ -35,6 +36,7 @@ export type StoreSettings = {
   storeId: string
   templateIds: string[]
   enabled: Record<string, boolean>
+  openaiKey: string
 }
 
 export type CatalogCache = {
@@ -102,6 +104,7 @@ export function defaultSettings(): StoreSettings {
     storeId: '',
     templateIds: [],
     enabled: {},
+    openaiKey: '',
   }
 }
 
@@ -134,6 +137,7 @@ export async function getSettings(kv: KVNamespace): Promise<StoreSettings> {
       storeId: typeof parsed.storeId === 'string' ? parsed.storeId.trim() : '',
       templateIds,
       enabled,
+      openaiKey: typeof parsed.openaiKey === 'string' ? parsed.openaiKey.trim().slice(0, 200) : '',
     }
   } catch {
     return base
@@ -226,6 +230,40 @@ export async function getGroups(kv: KVNamespace): Promise<StoreGroups> {
   } catch {
     return emptyGroups()
   }
+}
+
+export type ProductCopy = {
+  description: string
+  source: 'openai' | 'edited'
+  updatedAt: string
+}
+
+export async function getCopy(kv: KVNamespace): Promise<Record<string, ProductCopy>> {
+  const raw = await kv.get(COPY_KEY)
+  if (!raw) return {}
+  try {
+    const parsed = JSON.parse(raw) as Record<string, Partial<ProductCopy>>
+    if (!parsed || typeof parsed !== 'object') return {}
+    const copy: Record<string, ProductCopy> = {}
+    for (const [id, row] of Object.entries(parsed)) {
+      if (!/^[A-Za-z0-9_-]{8,80}$/.test(id) || !row || typeof row.description !== 'string') continue
+      const description = row.description.trim().slice(0, 4000)
+      if (!description) continue
+      copy[id] = {
+        description,
+        source: row.source === 'edited' ? 'edited' : 'openai',
+        updatedAt: typeof row.updatedAt === 'string' ? row.updatedAt : '',
+      }
+    }
+    return copy
+  } catch {
+    return {}
+  }
+}
+
+export async function saveCopy(kv: KVNamespace, copy: Record<string, ProductCopy>) {
+  await kv.put(COPY_KEY, JSON.stringify(copy))
+  return copy
 }
 
 export async function saveGroups(kv: KVNamespace, groups: StoreGroups) {
