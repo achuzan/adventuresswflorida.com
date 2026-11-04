@@ -19,6 +19,19 @@ const CATEGORY_PHOTOS = [
   '/calendars/2027/photos/front.jpg',
 ]
 
+type AdminVariant = {
+  id: string
+  title: string
+  printFile: { name: string; source: 'upload' | 'link'; href: string } | null
+}
+
+type PrintStatus = {
+  productId: string
+  hasPrintFile: boolean
+  sellable: boolean
+  variants: AdminVariant[]
+}
+
 type AdminProduct = {
   id: string
   title: string
@@ -29,6 +42,7 @@ type AdminProduct = {
   enabled: boolean
   sellable: boolean
   variantCount: number
+  variants: AdminVariant[]
   hasPrintFile: boolean
   imageCount: number
   description: string
@@ -116,6 +130,87 @@ type AdminStore = {
   orders: AdminOrder[]
 }
 
+function isCalendarProduct(product: { productType: string; title: string }) {
+  return /calendar/i.test(`${product.productType} ${product.title}`)
+}
+
+function PrintFiles({
+  product,
+  busy,
+  onUpload,
+  onLink,
+  onRemove,
+}: {
+  product: AdminProduct
+  busy: boolean
+  onUpload: (product: AdminProduct, variantId: string, file: File) => void
+  onLink: (product: AdminProduct, variantId: string, url: string) => void
+  onRemove: (product: AdminProduct, variantId: string) => void
+}) {
+  const [links, setLinks] = useState<Record<string, string>>({})
+  const calendar = isCalendarProduct(product)
+  return (
+    <div>
+      <p className="admin-hint">
+        {calendar
+          ? 'Upload the calendar PDF once. Every order of this product sends that same file.'
+          : 'Upload the photo for each size once. Every order of that size sends the same file.'}
+      </p>
+      <ul className="store-print-files">
+        {(product.variants ?? []).map((variant) => (
+          <li key={variant.id}>
+            <strong>{variant.title}</strong>
+            {variant.printFile ? (
+              <span>
+                {variant.printFile.source === 'link' ? 'Public link' : 'Uploaded file'} · {variant.printFile.name}{' '}
+                <a href={variant.printFile.href} target="_blank" rel="noreferrer">
+                  Open
+                </a>
+              </span>
+            ) : (
+              <span>No print file yet</span>
+            )}
+            <label>
+              {calendar ? 'Calendar PDF' : 'Photo or PDF'}
+              <input
+                type="file"
+                accept={calendar ? '.pdf,application/pdf' : '.jpg,.jpeg,.png,.webp,.pdf,image/jpeg,image/png,image/webp,application/pdf'}
+                disabled={busy}
+                onChange={(event) => {
+                  const file = event.target.files?.[0]
+                  event.target.value = ''
+                  if (file) onUpload(product, variant.id, file)
+                }}
+              />
+            </label>
+            <form
+              onSubmit={(event) => {
+                event.preventDefault()
+                onLink(product, variant.id, links[variant.id] ?? '')
+              }}
+            >
+              <input
+                type="url"
+                value={links[variant.id] ?? ''}
+                placeholder="Or paste a public https link that downloads the file"
+                onChange={(event) => setLinks((current) => ({ ...current, [variant.id]: event.target.value }))}
+              />
+              <button className="btn btn--ghost" type="submit" disabled={busy}>
+                Save link
+              </button>
+            </form>
+            {variant.printFile && (
+              <button type="button" className="text-link" disabled={busy} onClick={() => onRemove(product, variant.id)}>
+                Remove print file
+              </button>
+            )}
+          </li>
+        ))}
+      </ul>
+    </div>
+  )
+}
+
 export function AdminStorePanel() {
   const [data, setData] = useState<AdminStore | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -159,6 +254,7 @@ export function AdminStorePanel() {
             retailCents: next.retailCents,
             pricePending: next.pricePending,
             hasPrintFile: next.hasPrintFile,
+            variants: next.variants ?? product.variants,
             status: next.status,
             sellable: next.sellable,
           }
@@ -547,6 +643,93 @@ export function AdminStorePanel() {
     }
   }
 
+  function applyPrint(productId: string, status: PrintStatus) {
+    setData((current) =>
+      current
+        ? {
+            ...current,
+            products: current.products.map((product) =>
+              product.id === productId
+                ? {
+                    ...product,
+                    variants: status.variants,
+                    hasPrintFile: status.hasPrintFile,
+                    sellable: status.sellable,
+                  }
+                : product,
+            ),
+          }
+        : current,
+    )
+  }
+
+  async function readPrintResponse(res: Response) {
+    const data = (await res.json().catch(() => null)) as (PrintStatus & { error?: string }) | null
+    if (!res.ok || !data?.variants) throw new Error(data?.error || 'Could not save that print file')
+    return data
+  }
+
+  async function uploadPrint(product: AdminProduct, variantId: string, file: File) {
+    setBusy(true)
+    setError(null)
+    setNotice(null)
+    try {
+      const body = new FormData()
+      body.set('file', file)
+      const res = await fetch(
+        `/api/admin/store/products/${encodeURIComponent(product.id)}/variants/${encodeURIComponent(variantId)}/file`,
+        { method: 'POST', credentials: 'same-origin', body },
+      )
+      applyPrint(product.id, await readPrintResponse(res))
+      setNotice(`Saved the print file for ${product.title}. Every order of that size sends it.`)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not upload that print file')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function savePrintLink(product: AdminProduct, variantId: string, url: string) {
+    setBusy(true)
+    setError(null)
+    setNotice(null)
+    try {
+      const res = await fetch(
+        `/api/admin/store/products/${encodeURIComponent(product.id)}/variants/${encodeURIComponent(variantId)}/file`,
+        {
+          method: 'POST',
+          credentials: 'same-origin',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ url }),
+        },
+      )
+      applyPrint(product.id, await readPrintResponse(res))
+      setNotice(`Saved the print link for ${product.title}. Every order of that size sends it.`)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not save that print link')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function removePrint(product: AdminProduct, variantId: string) {
+    setBusy(true)
+    setError(null)
+    setNotice(null)
+    try {
+      const res = await fetch(
+        `/api/admin/store/products/${encodeURIComponent(product.id)}/variants/${encodeURIComponent(variantId)}/file`,
+        { method: 'DELETE', credentials: 'same-origin' },
+      )
+      applyPrint(product.id, await readPrintResponse(res))
+      setNotice(`Removed the print file from ${product.title}`)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not remove that print file')
+    } finally {
+      setBusy(false)
+    }
+  }
+
   async function sync(order: AdminOrder) {
     setBusy(true)
     setError(null)
@@ -638,6 +821,10 @@ export function AdminStorePanel() {
                 </button>
                 <p className="admin-hint">Last pull {new Date(data.fetchedAt).toLocaleString()}</p>
               </div>
+              <p className="admin-hint">
+                Upload each size’s print file once. Every order of that size sends the same file to Gelato. Prints and
+                mugs take a photo. Calendars take the PDF made from Gelato’s template.
+              </p>
               {data.notes.length > 0 && (
                 <ul className="admin-hint">
                   {data.notes.map((note) => (
@@ -675,10 +862,23 @@ export function AdminStorePanel() {
                               ? 'Gelato did not return a US price'
                               : `Gelato cost ${formatUsd(product.wholesaleCents)} · customer ${formatUsd(product.retailCents ?? 0)}`}
                         </p>
+                        <PrintFiles
+                          product={product}
+                          busy={busy}
+                          onUpload={(item, variantId, file) => void uploadPrint(item, variantId, file)}
+                          onLink={(item, variantId, url) => void savePrintLink(item, variantId, url)}
+                          onRemove={(item, variantId) => void removePrint(item, variantId)}
+                        />
                         <label className="admin-check">
                           <input type="checkbox" checked={product.enabled} onChange={() => void toggle(product)} />
                           Show in the store
                         </label>
+                        {product.enabled &&
+                          product.status !== 'publishing' &&
+                          product.status !== 'publishing_error' &&
+                          !product.hasPrintFile && (
+                            <p className="admin-hint">Hidden in the shop until every size has a print file.</p>
+                          )}
                         <label>
                           Store description
                           <textarea
@@ -1046,6 +1246,10 @@ export function AdminStorePanel() {
                     placeholder="From the store URL in the Gelato dashboard"
                   />
                 </label>
+                <p className="admin-hint admin-span-2">
+                  This id only lists the designs. Orders are sent with the print file on each product, not through the
+                  Gelato store.
+                </p>
                 <label className="admin-span-2">
                   AI API URL
                   <input

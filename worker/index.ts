@@ -16,6 +16,7 @@ import { CALENDAR_SUBJECT_MAX, parseCalendarSlot } from '../src/shared/calendar'
 import { validateCalendarNav } from '../src/shared/site-settings'
 import { getCalendarSlot, listCalendars, saveCalendarSlot } from './calendars'
 import { getSiteSettings, saveSiteSettings } from './settings'
+import { servePrintRequest } from './print-files'
 import { handleStoreRequest } from './store-api'
 
 const MAX_UPLOAD_BYTES = 12 * 1024 * 1024
@@ -400,6 +401,10 @@ export default {
 
     if (path.startsWith('/api/')) {
       return handleApi(request, env, path)
+    }
+
+    if (path.startsWith('/media/prints/')) {
+      return servePrintRequest(request, env, path)
     }
 
     if (path.startsWith('/media/')) {

@@ -60,6 +60,20 @@ import {
   type StoreSettings,
 } from './store-data'
 import {
+  deletePrintAsset,
+  describePrintUpload,
+  getPrintIndex,
+  orderFiles,
+  parsePrintLink,
+  PrintFileError,
+  publicPrintUrl,
+  safePrintName,
+  savePrintLink,
+  savePrintUpload,
+  printByteLimit,
+  type PrintIndex,
+} from './print-files'
+import {
   deliveryLabel,
   isCouponCode,
   markupDiscountCents,
@@ -99,9 +113,31 @@ function publishableKey(env: Env) {
   return key.startsWith('pk_') ? key : null
 }
 
-function isSellable(product: InternalProduct) {
+function isSellable(product: InternalProduct, prints: PrintIndex) {
   if (product.variants.length === 0) return false
-  return product.status !== 'publishing' && product.status !== 'publishing_error'
+  if (product.status === 'publishing' || product.status === 'publishing_error') return false
+  return product.variants.every((variant) => Boolean(prints[variant.id]))
+}
+
+function needsCalendarPdf(product: InternalProduct) {
+  return /calendar/i.test(`${product.productType} ${product.title}`)
+}
+
+function variantViews(product: InternalProduct, prints: PrintIndex, origin: string) {
+  return product.variants.map((variant) => {
+    const asset = prints[variant.id]
+    return {
+      id: variant.id,
+      title: variant.title,
+      printFile: asset
+        ? {
+            name: asset.name,
+            source: asset.storage === 'url' ? ('link' as const) : ('upload' as const),
+            href: asset.storage === 'url' ? asset.url : publicPrintUrl(origin, asset),
+          }
+        : null,
+    }
+  })
 }
 
 function configuredStoreIds(env: Env, settings: StoreSettings) {
@@ -339,17 +375,30 @@ function buildShippingOptions(quotes: GelatoQuoteGroup[], shippingMarkup: number
   return options
 }
 
-async function priceCart(env: Env, lines: IncomingLine[], address: ShippingAddress, coupon: StoreCoupon | null) {
+async function priceCart(
+  env: Env,
+  lines: IncomingLine[],
+  address: ShippingAddress,
+  coupon: StoreCoupon | null,
+  origin: string,
+) {
   if (!env.GELATO_API_KEY) throw new HttpError(503, 'The store is not available right now')
   const settings = await getSettings(env.PHOTOS_KV)
   const catalog = await loadCatalog(env, false)
+  const prints = await getPrintIndex(env.PHOTOS_KV)
   const resolved = lines.map((line) => {
     const product = catalog.products.find((item) => item.id === line.productId)
-    if (!product || settings.enabled[product.id] !== true || !isSellable(product)) {
+    if (!product || settings.enabled[product.id] !== true || !isSellable(product, prints)) {
       throw new HttpError(400, 'One of those products is not for sale')
     }
     const variant = product.variants.find((item) => item.id === line.variantId)
     if (!variant) throw new HttpError(400, 'Choose an available option')
+    const asset = prints[variant.id]
+    if (!asset) throw new HttpError(400, 'That product is not ready to print')
+    const files = orderFiles(origin, asset)
+    if (!files[0]?.url.startsWith('https://')) {
+      throw new HttpError(400, 'Gelato can only download print files from the public https site')
+    }
     return {
       productId: product.id,
       variantId: variant.id,
@@ -358,7 +407,7 @@ async function priceCart(env: Env, lines: IncomingLine[], address: ShippingAddre
       title: product.title,
       variantTitle: variant.title,
       quantity: line.quantity,
-      files: variant.files,
+      files,
       pageCount: undefined as number | undefined,
     }
   })
@@ -621,8 +670,6 @@ async function fulfill(env: Env, order: StoreOrder) {
   await saveOrder(env.PHOTOS_KV, order)
   const locked = await getOrder(env.PHOTOS_KV, order.id)
   if (!locked || locked.fulfillClaim !== claim) return locked ?? order
-  const storeId = configuredStoreIds(env, await getSettings(env.PHOTOS_KV))[0] ?? ''
-
   const errors: string[] = []
   for (const leg of order.legs) {
     if (leg.gelatoOrderId) continue
@@ -650,12 +697,9 @@ async function fulfill(env: Env, order: StoreOrder) {
         order.email,
         leg.shipmentMethodUid,
         order.address,
-        storeId,
         itemsForLeg(order, leg).map((item) => ({
           itemReferenceId: item.itemReferenceId,
           productUid: item.productUid,
-          storeProductId: item.productId,
-          storeProductVariantId: item.variantId,
           quantity: item.quantity,
           files: item.files,
           pageCount: item.pageCount,
@@ -868,9 +912,10 @@ function adminOrder(order: StoreOrder) {
   }
 }
 
-async function adminPayload(env: Env, refresh: boolean) {
+async function adminPayload(env: Env, refresh: boolean, origin: string) {
   const settings = await getSettings(env.PHOTOS_KV)
   const catalog = await loadCatalog(env, refresh)
+  const prints = await getPrintIndex(env.PHOTOS_KV)
   const uids = catalog.products.flatMap((product) => product.variants.map((variant) => variant.productUid))
   const prices = env.GELATO_API_KEY ? await ensurePrices(env.PHOTOS_KV, env.GELATO_API_KEY, uids, 10) : new Map()
   const orders = await listOrders(env.PHOTOS_KV, 15)
@@ -911,9 +956,10 @@ async function adminPayload(env: Env, refresh: boolean) {
         status: product.status,
         source: product.source,
         enabled: settings.enabled[product.id] === true,
-        sellable: isSellable(product),
+        sellable: isSellable(product, prints),
         variantCount: product.variants.length,
-        hasPrintFile: product.variants.some((variant) => variant.files.length > 0),
+        variants: variantViews(product, prints, origin),
+        hasPrintFile: product.variants.every((variant) => Boolean(prints[variant.id])),
         imageCount: productImages(product).length,
         description: shownDescription(product, copy),
         descriptionSource: copy[product.id]?.source ?? 'gelato',
@@ -976,6 +1022,10 @@ export async function handleStoreRequest(request: Request, env: Env) {
     if (collectionMatch && request.method === 'PATCH') return await adminUpdateGroup(request, env, 'collections', collectionMatch[1]!)
     if (collectionMatch && request.method === 'DELETE') return await adminDeleteGroup(request, env, 'collections', collectionMatch[1]!)
     if (path === '/api/admin/store/descriptions' && request.method === 'POST') return await adminDescriptions(request, env)
+    const printFile = /^\/api\/admin\/store\/products\/([A-Za-z0-9_-]{8,80})\/variants\/([A-Za-z0-9_-]{1,120})\/file$/.exec(path)
+    if (printFile && (request.method === 'POST' || request.method === 'DELETE')) {
+      return await adminPrintFile(request, env, printFile[1]!, printFile[2]!)
+    }
     const toggle = /^\/api\/admin\/store\/products\/([A-Za-z0-9_-]{8,80})$/.exec(path)
     if (toggle && request.method === 'PATCH') return await adminToggle(request, env, toggle[1]!)
     const sync = /^\/api\/admin\/store\/orders\/(ord_[A-Za-z0-9_-]{8,80})\/sync$/.exec(path)
@@ -1012,7 +1062,8 @@ async function publicList(env: Env) {
   const groups = await getGroups(env.PHOTOS_KV)
   const copy = await getCopy(env.PHOTOS_KV)
   const catalog = await loadCatalog(env, false)
-  const visible = catalog.products.filter((product) => settings.enabled[product.id] === true && isSellable(product))
+  const prints = await getPrintIndex(env.PHOTOS_KV)
+  const visible = catalog.products.filter((product) => settings.enabled[product.id] === true && isSellable(product, prints))
   const prices = env.GELATO_API_KEY
     ? await ensurePrices(
         env.PHOTOS_KV,
@@ -1036,8 +1087,9 @@ async function publicOne(env: Env, id: string) {
   const groups = await getGroups(env.PHOTOS_KV)
   const copy = await getCopy(env.PHOTOS_KV)
   const catalog = await loadCatalog(env, false)
+  const prints = await getPrintIndex(env.PHOTOS_KV)
   const product = catalog.products.find((item) => item.id === id)
-  if (!product || settings.enabled[product.id] !== true || !isSellable(product)) {
+  if (!product || settings.enabled[product.id] !== true || !isSellable(product, prints)) {
     return json({ error: 'That product is not in the store' }, 404)
   }
   const prices = env.GELATO_API_KEY
@@ -1063,7 +1115,7 @@ async function quote(request: Request, env: Env) {
   const address = validateAddress((body as { address?: unknown }).address)
   if (!address.ok) throw new HttpError(400, address.error)
   const coupon = await readCoupon(env, body)
-  const priced = await priceCart(env, parseLines(body), address.address, coupon)
+  const priced = await priceCart(env, parseLines(body), address.address, coupon, checkoutOrigin(request))
   return json({
     lines: priced.lines.map((line) => ({
       productId: line.productId,
@@ -1153,7 +1205,7 @@ async function prepareCharge(request: Request, env: Env): Promise<PreparedCharge
   if (!address.ok) throw new HttpError(400, address.error)
   const shippingOptionId = typeof body.shippingOptionId === 'string' ? body.shippingOptionId : ''
   const coupon = await readCoupon(env, body)
-  const priced = await priceCart(env, parseLines(body), address.address, coupon)
+  const priced = await priceCart(env, parseLines(body), address.address, coupon, checkoutOrigin(request))
   const option = priced.shipping.find((item) => item.id === shippingOptionId)
   if (!option) throw new HttpError(400, 'Choose a shipping method again')
   const key = publishableKey(env)
@@ -1386,7 +1438,7 @@ async function adminTest(request: Request, env: Env) {
 
 async function adminGet(request: Request, env: Env, refresh: boolean) {
   await requireAdmin(request, env)
-  return json(await adminPayload(env, refresh))
+  return json(await adminPayload(env, refresh, checkoutOrigin(request)))
 }
 
 async function adminSettings(request: Request, env: Env) {
@@ -1455,7 +1507,7 @@ async function adminSettings(request: Request, env: Env) {
     settings.openaiKey = ''
   }
   await saveSettings(env.PHOTOS_KV, settings)
-  return json(await adminPayload(env, false))
+  return json(await adminPayload(env, false, checkoutOrigin(request)))
 }
 
 async function adminCreateCoupon(request: Request, env: Env) {
@@ -1553,6 +1605,79 @@ async function adminDeleteGroup(request: Request, env: Env, kind: 'categories' |
     [kind]: groups[kind].filter((group) => group.id !== id),
   })
   return json({ groups: saved })
+}
+
+async function printFileStatus(env: Env, origin: string, product: InternalProduct) {
+  const prints = await getPrintIndex(env.PHOTOS_KV)
+  return {
+    productId: product.id,
+    hasPrintFile: product.variants.every((variant) => Boolean(prints[variant.id])),
+    sellable: isSellable(product, prints),
+    variants: variantViews(product, prints, origin),
+  }
+}
+
+async function adminPrintFile(request: Request, env: Env, productId: string, variantId: string) {
+  await requireAdmin(request, env)
+  const catalog = await loadCatalog(env, false)
+  const product = catalog.products.find((item) => item.id === productId)
+  if (!product) throw new HttpError(404, 'That product is not in the Gelato catalog')
+  const variant = product.variants.find((item) => item.id === variantId)
+  if (!variant) throw new HttpError(404, 'That size is not on this product')
+  const origin = checkoutOrigin(request)
+
+  try {
+    if (request.method === 'DELETE') {
+      await deletePrintAsset(env, variantId)
+      return json(await printFileStatus(env, origin, product))
+    }
+
+    const contentType = request.headers.get('content-type') || ''
+    if (contentType.includes('application/json')) {
+      const body = (await readJson(request)) as { url?: unknown }
+      const raw = typeof body.url === 'string' ? body.url : ''
+      const link = parsePrintLink(raw)
+      if (needsCalendarPdf(product) && !link.url.toLowerCase().includes('.pdf')) {
+        throw new HttpError(400, 'Calendars need a public link to the PDF made from Gelato’s template')
+      }
+      await savePrintLink(env, {
+        productId: product.id,
+        variantId: variant.id,
+        name: link.name,
+        url: link.url,
+      })
+      return json(await printFileStatus(env, origin, product))
+    }
+
+    const length = Number(request.headers.get('content-length') || 0)
+    if (length > printByteLimit(env) + 2 * 1024 * 1024) {
+      const mb = Math.round(printByteLimit(env) / (1024 * 1024))
+      throw new HttpError(400, `That file is over ${mb} MB. Paste a public https link to it instead.`)
+    }
+    const form = await request.formData()
+    const file = form.get('file')
+    if (!(file instanceof File)) throw new HttpError(400, 'Choose a print file')
+    const described = describePrintUpload(file)
+    if (!described) throw new HttpError(400, 'Use a JPG, PNG, or WebP photo, or a PDF')
+    if (needsCalendarPdf(product) && described.contentType !== 'application/pdf') {
+      throw new HttpError(400, 'Calendars need the PDF made from Gelato’s template')
+    }
+    if (file.size > printByteLimit(env)) {
+      const mb = Math.round(printByteLimit(env) / (1024 * 1024))
+      throw new HttpError(400, `That file is over ${mb} MB. Paste a public https link to it instead.`)
+    }
+    await savePrintUpload(env, {
+      productId: product.id,
+      variantId: variant.id,
+      name: safePrintName(file.name, described.ext),
+      contentType: described.contentType,
+      bytes: await file.arrayBuffer(),
+    })
+    return json(await printFileStatus(env, origin, product))
+  } catch (error) {
+    if (error instanceof PrintFileError) throw new HttpError(400, error.message)
+    throw error
+  }
 }
 
 async function adminToggle(request: Request, env: Env, id: string) {

@@ -2569,6 +2569,33 @@ main:has(.page--store) {
   padding: 0.9rem;
 }
 
+.store-print-files {
+  display: grid;
+  gap: 0.75rem;
+  margin: 0.75rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.store-print-files > li {
+  display: grid;
+  gap: 0.35rem;
+  padding-top: 0.65rem;
+  border-top: 1px solid var(--line);
+}
+
+.store-print-files form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.store-print-files input[type='url'] {
+  flex: 1 1 14rem;
+  min-width: 0;
+}
+
 .store-orders > li {
   display: flex;
   flex-direction: column;

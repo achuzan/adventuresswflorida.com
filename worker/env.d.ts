@@ -3,6 +3,7 @@
 interface Env {
   ASSETS: Fetcher
   PHOTOS_KV: KVNamespace
+  PRINT_FILES?: R2Bucket
   ADMIN_PASSWORD: string
   SESSION_SECRET: string
   GELATO_API_KEY?: string

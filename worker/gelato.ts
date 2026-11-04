@@ -691,17 +691,19 @@ export async function createGelatoOrder(
   email: string,
   shipmentMethodUid: string,
   address: ShippingAddress,
-  storeId: string,
   items: {
     itemReferenceId: string
     productUid: string
-    storeProductId: string
-    storeProductVariantId: string
     quantity: number
     files: PrintFile[]
     pageCount?: number
   }[],
 ) {
+  for (const item of items) {
+    if (!item.files.length || item.files.some((file) => !file.url.startsWith('https://'))) {
+      throw new GelatoError(400, 'Each item needs a public print file before it can be ordered')
+    }
+  }
   const data = await gelato<unknown>(apiKey, 'https://order.gelatoapis.com/v4/orders', {
     method: 'POST',
     body: JSON.stringify({
@@ -709,16 +711,13 @@ export async function createGelatoOrder(
       orderReferenceId: referenceId,
       customerReferenceId: email.slice(0, 60),
       currency: 'USD',
-      ...(storeId ? { storeId } : {}),
       shipmentMethodUid,
       items: items.map((item) => ({
         itemReferenceId: item.itemReferenceId,
         productUid: item.productUid,
-        storeProductId: item.storeProductId,
-        storeProductVariantId: item.storeProductVariantId,
         quantity: item.quantity,
+        files: item.files,
         ...(item.pageCount ? { pageCount: item.pageCount } : {}),
-        ...(item.files.length ? { files: item.files } : {}),
       })),
       shippingAddress: recipientOf(address),
       metadata: [{ key: 'orderId', value: referenceId.slice(0, 100) }],
