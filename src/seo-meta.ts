@@ -68,7 +68,7 @@ export const pageMeta = {
   store: {
     title: `Store · Prints, Calendars & Mugs · ${site.shortBrand}`,
     description:
-      'Order wildlife photography prints, calendars, and mugs from Adventures in Southwest Florida. Printed to order and shipped by Gelato.',
+      'Order wildlife photography prints, calendars, and mugs from Adventures in Southwest Florida. Printed to order and shipped by Printful.',
     path: '/store',
     image: site.defaultOgImage,
   },

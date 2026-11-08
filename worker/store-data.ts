@@ -1,6 +1,7 @@
 import { isCouponCode, type ShippingAddress } from '../src/shared/store'
 import type { InternalProduct, PrintFile } from './gelato'
-import { fetchUnitWholesaleCents, mapPool } from './gelato'
+import { mapPool } from './gelato'
+import { printfulId } from './printful'
 
 const SETTINGS_KEY = 'store:settings'
 const COUPONS_KEY = 'store:coupons'
@@ -38,6 +39,7 @@ export type StoreSettings = {
   storeId: string
   templateIds: string[]
   enabled: Record<string, boolean>
+  markupByProduct: Record<string, number>
   openaiKey: string
   aiBaseUrl: string
   aiApiKey: string
@@ -110,11 +112,17 @@ export function defaultSettings(): StoreSettings {
     storeId: '',
     templateIds: [],
     enabled: {},
+    markupByProduct: {},
     openaiKey: '',
     aiBaseUrl: '',
     aiApiKey: '',
     aiModel: '',
   }
+}
+
+export function productMarkup(settings: StoreSettings, productId: string) {
+  const override = settings.markupByProduct[productId]
+  return override == null ? settings.markupPercent : override
 }
 
 export function clampPercent(value: unknown, max: number) {
@@ -137,7 +145,14 @@ export async function getSettings(kv: KVNamespace): Promise<StoreSettings> {
     const enabled: Record<string, boolean> = {}
     if (parsed.enabled && typeof parsed.enabled === 'object') {
       for (const [id, value] of Object.entries(parsed.enabled)) {
-        if (/^[A-Za-z0-9_-]{8,80}$/.test(id)) enabled[id] = Boolean(value)
+        if (printfulId.test(id)) enabled[id] = Boolean(value)
+      }
+    }
+    const markupByProduct: Record<string, number> = {}
+    if (parsed.markupByProduct && typeof parsed.markupByProduct === 'object') {
+      for (const [id, value] of Object.entries(parsed.markupByProduct)) {
+        const percent = clampPercent(value, 400)
+        if (printfulId.test(id) && percent != null) markupByProduct[id] = percent
       }
     }
     return {
@@ -146,6 +161,7 @@ export async function getSettings(kv: KVNamespace): Promise<StoreSettings> {
       storeId: typeof parsed.storeId === 'string' ? parsed.storeId.trim() : '',
       templateIds,
       enabled,
+      markupByProduct,
       openaiKey: typeof parsed.openaiKey === 'string' ? parsed.openaiKey.trim().slice(0, 500) : '',
       aiBaseUrl: typeof parsed.aiBaseUrl === 'string' ? parsed.aiBaseUrl.trim().slice(0, 300) : '',
       aiApiKey: typeof parsed.aiApiKey === 'string' ? parsed.aiApiKey.trim().slice(0, 500) : '',
@@ -212,7 +228,7 @@ function parseGroup(row: unknown): StoreGroup | null {
   const name = typeof item.name === 'string' ? item.name.trim() : ''
   if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(id) || id.length > 40 || name.length < 2) return null
   const productIds = Array.isArray(item.productIds)
-    ? [...new Set(item.productIds.map(String).filter((productId) => /^[A-Za-z0-9_-]{8,80}$/.test(productId)))].slice(0, 80)
+    ? [...new Set(item.productIds.map(String).filter((productId) => printfulId.test(productId)))].slice(0, 80)
     : []
   return {
     id,
@@ -221,7 +237,7 @@ function parseGroup(row: unknown): StoreGroup | null {
     productIds,
     image: siteImagePath(item.image),
     imageProductId:
-      typeof item.imageProductId === 'string' && /^[A-Za-z0-9_-]{8,80}$/.test(item.imageProductId)
+      typeof item.imageProductId === 'string' && printfulId.test(item.imageProductId)
         ? item.imageProductId
         : '',
   }
@@ -271,7 +287,7 @@ export async function getCopy(kv: KVNamespace): Promise<Record<string, ProductCo
     if (!parsed || typeof parsed !== 'object') return {}
     const copy: Record<string, ProductCopy> = {}
     for (const [id, row] of Object.entries(parsed)) {
-      if (!/^[A-Za-z0-9_-]{8,80}$/.test(id) || !row || typeof row.description !== 'string') continue
+      if (!printfulId.test(id) || !row || typeof row.description !== 'string') continue
       const description = row.description.trim().slice(0, 4000)
       if (!description) continue
       copy[id] = {
@@ -350,8 +366,13 @@ function priceState(row: PriceRow | undefined, now: number): number | null | und
   return row.cents
 }
 
-/** Wholesale unit cents for US quantity 1. Missing keys were not fetched. Null means Gelato had no price. */
-export async function ensurePrices(kv: KVNamespace, apiKey: string, uids: string[], limit: number) {
+/** Wholesale unit cents. Missing keys were not fetched. Null means the printer had no price. */
+export async function ensurePrices(
+  kv: KVNamespace,
+  uids: string[],
+  limit: number,
+  fetchCents: (uid: string) => Promise<number | null>,
+) {
   const book = await readPriceBook(kv)
   const now = Date.now()
   const known = new Map<string, number | null>()
@@ -362,10 +383,10 @@ export async function ensurePrices(kv: KVNamespace, apiKey: string, uids: string
     else known.set(uid, state)
   }
   const batch = missing.slice(0, limit)
-  if (batch.length && apiKey) {
+  if (batch.length) {
     await mapPool(batch, 4, async (uid) => {
       try {
-        book[uid] = { cents: await fetchUnitWholesaleCents(apiKey, uid), at: Date.now() }
+        book[uid] = { cents: await fetchCents(uid), at: Date.now() }
       } catch (error) {
         console.error(JSON.stringify({ price: uid, message: error instanceof Error ? error.message : 'failed' }))
         book[uid] = { cents: null, at: Date.now() }

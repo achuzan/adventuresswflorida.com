@@ -1,6 +1,8 @@
 # Local secrets for `wrangler dev` — copy to `.dev.vars` and edit.
 ADMIN_PASSWORD=change-me
 SESSION_SECRET=change-me-to-a-long-random-string
+PRINTFUL_API_TOKEN=
+PRINTFUL_STORE_ID=
 GELATO_API_KEY=
 GELATO_STORE_ID=
 STRIPE_SECRET_KEY=

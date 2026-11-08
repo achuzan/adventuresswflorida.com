@@ -236,7 +236,7 @@ export function isCouponCode(code: string) {
   return /^[A-Z0-9][A-Z0-9-]{2,23}$/.test(code)
 }
 
-/** Amount of store markup removed. The result never exceeds the markup, so the price stays at or above Gelato’s cost. */
+/** Amount of store markup removed. The result never exceeds the markup, so the price stays at or above the print cost. */
 export function markupDiscountCents(wholesaleCents: number, retailCents: number, percent: number) {
   const markup = Math.max(0, retailCents - wholesaleCents)
   const portion = Math.min(100, Math.max(0, percent))
@@ -297,7 +297,7 @@ export function validateAddress(
     return { ok: false, error: 'City is required and must be 30 characters or fewer' }
   }
   if (!countries.some(([code]) => code === country)) {
-    return { ok: false, error: 'Choose a country Gelato ships to' }
+    return { ok: false, error: 'Choose a country this store ships to' }
   }
   if (STATE_REQUIRED.has(country) && !state) {
     return { ok: false, error: 'State or province is required for that country' }
@@ -314,7 +314,7 @@ export function validateAddress(
   }
   const digits = phone.replace(/\D/g, '')
   if (digits.length < 7 || phone.length > 25) {
-    return { ok: false, error: 'Enter a phone number Gelato can give the carrier (25 characters or fewer)' }
+    return { ok: false, error: 'Enter a phone number the carrier can use (25 characters or fewer)' }
   }
 
   return {

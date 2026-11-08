@@ -9,18 +9,19 @@ import {
   type AiConnection,
 } from './openai'
 import { testConnections } from './connection-tests'
+import { GelatoError, type GelatoQuoteGroup, type InternalProduct, type QuotedMethod } from './gelato'
 import {
-  cancelGelatoOrder,
-  createGelatoOrder,
-  findGelatoOrder,
-  GelatoError,
-  pullCatalog,
-  lookupPageCount,
-  quoteOrderResolvingPages,
-  type GelatoQuoteGroup,
-  type InternalProduct,
-  type QuotedMethod,
-} from './gelato'
+  cancelPrintfulOrder,
+  confirmPrintfulOrder,
+  createPrintfulDraft,
+  fetchPrintfulVariantCents,
+  findPrintfulOrder,
+  printfulId,
+  printfulShippingRates,
+  PrintfulError,
+  pullPrintfulCatalog,
+  resolvePrintfulStore,
+} from './printful'
 import {
   cancelPaymentIntent,
   capturePaymentIntent,
@@ -40,6 +41,7 @@ import {
   getGroups,
   getOrder,
   getSettings,
+  productMarkup,
   listOrders,
   saveCoupons,
   saveCopy,
@@ -52,6 +54,7 @@ import {
   siteImagePath,
   writeCatalog,
   type OrderLeg,
+  type OrderLine,
   type ProductCopy,
   type StoreCoupon,
   type StoreGroup,
@@ -63,7 +66,6 @@ import {
   deletePrintAsset,
   describePrintUpload,
   getPrintIndex,
-  orderFiles,
   parsePrintLink,
   PrintFileError,
   publicPrintUrl,
@@ -113,10 +115,29 @@ function publishableKey(env: Env) {
   return key.startsWith('pk_') ? key : null
 }
 
-function isSellable(product: InternalProduct, prints: PrintIndex) {
+function isSellable(product: InternalProduct) {
   if (product.variants.length === 0) return false
-  if (product.status === 'publishing' || product.status === 'publishing_error') return false
-  return product.variants.every((variant) => Boolean(prints[variant.id]))
+  return product.status === 'active'
+}
+
+function printfulToken(env: Env) {
+  return env.PRINTFUL_API_TOKEN?.trim() ?? ''
+}
+
+function preferredStoreId(env: Env, settings: StoreSettings) {
+  return (settings.storeId || env.PRINTFUL_STORE_ID || '').trim()
+}
+
+async function printfulStore(env: Env, settings: StoreSettings) {
+  const token = printfulToken(env)
+  if (!token) throw new HttpError(503, 'The store is not available right now')
+  return resolvePrintfulStore(token, preferredStoreId(env, settings))
+}
+
+function printfulExternalId(orderId: string, index: number) {
+  const hex = orderId.replace(/^ord_/, '').replace(/-/g, '')
+  if (index === 0) return hex.slice(0, 32)
+  return `${hex.slice(0, 30)}${index + 1}`.slice(0, 32)
 }
 
 function needsCalendarPdf(product: InternalProduct) {
@@ -140,31 +161,18 @@ function variantViews(product: InternalProduct, prints: PrintIndex, origin: stri
   })
 }
 
-function configuredStoreIds(env: Env, settings: StoreSettings) {
-  return [
-    ...new Set(
-      [env.GELATO_STORE_ID ?? '', settings.storeId]
-        .map((id) => id.trim())
-        .filter((id) => /^[A-Za-z0-9_-]{8,80}$/.test(id)),
-    ),
-  ]
-}
-
 async function loadCatalog(env: Env, refresh: boolean) {
   const cached = await readCatalog(env.PHOTOS_KV)
   const fresh = cached != null && Date.now() - Date.parse(cached.fetchedAt) < CATALOG_TTL_MS
   if (cached && fresh && !refresh) return cached
-  if (!env.GELATO_API_KEY) {
+  const token = printfulToken(env)
+  if (!token) {
     if (cached) return cached
     return { fetchedAt: new Date().toISOString(), notes: [] as string[], products: [] as InternalProduct[] }
   }
   try {
     const settings = await getSettings(env.PHOTOS_KV)
-    const pulled = await pullCatalog(
-      env.GELATO_API_KEY,
-      configuredStoreIds(env, settings),
-      settings.templateIds,
-    )
+    const pulled = await pullPrintfulCatalog(token, preferredStoreId(env, settings))
     const next = { fetchedAt: new Date().toISOString(), notes: pulled.notes, products: pulled.products }
     await writeCatalog(env.PHOTOS_KV, next)
     return next
@@ -245,7 +253,7 @@ function parseLines(body: unknown): IncomingLine[] {
     const productId = String((row as { productId?: unknown }).productId ?? '')
     const variantId = String((row as { variantId?: unknown }).variantId ?? '')
     const quantity = Number((row as { quantity?: unknown }).quantity)
-    if (!/^[A-Za-z0-9_-]{8,80}$/.test(productId) || !/^[A-Za-z0-9_-]{8,80}$/.test(variantId)) {
+    if (!printfulId.test(productId) || !printfulId.test(variantId)) {
       throw new HttpError(400, 'A product in the cart is not valid')
     }
     if (!Number.isInteger(quantity) || quantity < 1 || quantity > 20) {
@@ -268,7 +276,7 @@ function customerMethods(methods: QuotedMethod[]) {
 
 function assertUsd(currency: string) {
   if (currency !== 'USD') {
-    throw new HttpError(400, `Gelato quoted ${currency}. This store charges US dollars.`)
+    throw new HttpError(400, `Printful quoted ${currency}. This store charges US dollars.`)
   }
 }
 
@@ -295,7 +303,7 @@ function itemIds(quote: GelatoQuoteGroup) {
 function buildShippingOptions(quotes: GelatoQuoteGroup[], shippingMarkup: number): BuiltOption[] {
   const groups = quotes.map((quote) => ({ quote, methods: customerMethods(quote.shipmentMethods) }))
   if (groups.some((group) => !group.methods.length)) {
-    throw new HttpError(400, 'Gelato has no shipping method for that address')
+    throw new HttpError(400, 'Printful has no shipping method for that address')
   }
   for (const group of groups) {
     for (const method of group.methods) assertUsd(method.currency)
@@ -371,7 +379,7 @@ function buildShippingOptions(quotes: GelatoQuoteGroup[], shippingMarkup: number
       ),
     )
   }
-  if (!options.length) throw new HttpError(400, 'Gelato has no shipping method for that address')
+  if (!options.length) throw new HttpError(400, 'Printful has no shipping method for that address')
   return options
 }
 
@@ -380,25 +388,19 @@ async function priceCart(
   lines: IncomingLine[],
   address: ShippingAddress,
   coupon: StoreCoupon | null,
-  origin: string,
 ) {
-  if (!env.GELATO_API_KEY) throw new HttpError(503, 'The store is not available right now')
+  const token = printfulToken(env)
+  if (!token) throw new HttpError(503, 'The store is not available right now')
   const settings = await getSettings(env.PHOTOS_KV)
   const catalog = await loadCatalog(env, false)
-  const prints = await getPrintIndex(env.PHOTOS_KV)
+  const storeId = await printfulStore(env, settings)
   const resolved = lines.map((line) => {
     const product = catalog.products.find((item) => item.id === line.productId)
-    if (!product || settings.enabled[product.id] !== true || !isSellable(product, prints)) {
+    if (!product || settings.enabled[product.id] !== true || !isSellable(product)) {
       throw new HttpError(400, 'One of those products is not for sale')
     }
     const variant = product.variants.find((item) => item.id === line.variantId)
     if (!variant) throw new HttpError(400, 'Choose an available option')
-    const asset = prints[variant.id]
-    if (!asset) throw new HttpError(400, 'That product is not ready to print')
-    const files = orderFiles(origin, asset)
-    if (!files[0]?.url.startsWith('https://')) {
-      throw new HttpError(400, 'Gelato can only download print files from the public https site')
-    }
     return {
       productId: product.id,
       variantId: variant.id,
@@ -407,27 +409,49 @@ async function priceCart(
       title: product.title,
       variantTitle: variant.title,
       quantity: line.quantity,
-      files,
+      files: [] as OrderLine['files'],
       pageCount: undefined as number | undefined,
     }
   })
-  for (const line of resolved) {
-    const pageCount = await lookupPageCount(env.GELATO_API_KEY, line.productUid)
-    if (pageCount) line.pageCount = pageCount
-  }
-
-  const quoted = await quoteOrderResolvingPages(
-    env.GELATO_API_KEY,
-    resolved.map((line) => ({
-      itemReferenceId: line.itemReferenceId,
-      productUid: line.productUid,
-      quantity: line.quantity,
-      files: line.files,
-      pageCount: line.pageCount,
-    })),
-    address,
+  const prices = await ensurePrices(
+    env.PHOTOS_KV,
+    resolved.map((line) => line.productUid),
+    20,
+    (uid) => fetchPrintfulVariantCents(token, uid),
   )
-  const pages = new Map(quoted.lines.map((line) => [line.itemReferenceId, line.pageCount]))
+  const quotedProducts = resolved.map((line) => {
+    const unit = prices.get(line.productUid)
+    if (unit == null) throw new HttpError(502, 'Printful did not price one of the items')
+    return {
+      itemReferenceId: line.itemReferenceId,
+      price: (unit * line.quantity) / 100,
+      currency: 'USD',
+    }
+  })
+  const rates = await printfulShippingRates(
+    token,
+    storeId,
+    address,
+    resolved.map((line) => ({ variantId: line.productUid, quantity: line.quantity })),
+  )
+  const quoted = {
+    quotes: [
+      {
+        id: 'printful',
+        itemReferenceIds: resolved.map((line) => line.itemReferenceId),
+        shipmentMethods: rates.map((rate) => ({
+          name: rate.name,
+          shipmentMethodUid: rate.id,
+          price: Number(rate.rate),
+          currency: rate.currency,
+          minDeliveryDays: rate.minDeliveryDays,
+          maxDeliveryDays: rate.maxDeliveryDays,
+          type: 'normal',
+        })),
+        products: quotedProducts,
+      },
+    ],
+  }
   const wholesale = new Map<string, number>()
   for (const quote of quoted.quotes) {
     for (const product of quote.products) {
@@ -438,12 +462,12 @@ async function priceCart(
 
   const pricedLines = resolved.map((line) => {
     const wholesaleCents = wholesale.get(line.itemReferenceId)
-    if (wholesaleCents == null) throw new HttpError(502, 'Gelato did not price one of the items')
-    const retailCents = withMarkup(wholesaleCents, settings.markupPercent)
+    if (wholesaleCents == null) throw new HttpError(502, 'Printful did not price one of the items')
+    const retailCents = withMarkup(wholesaleCents, productMarkup(settings, line.productId))
     const discountCents = markupDiscountCents(wholesaleCents, retailCents, coupon?.percent ?? 0)
     return {
       ...line,
-      pageCount: pages.get(line.itemReferenceId),
+      pageCount: undefined,
       wholesaleCents,
       retailCents,
       discountCents,
@@ -555,17 +579,56 @@ async function releaseAuthorization(env: Env, order: StoreOrder) {
   }
 }
 
+async function confirmPrintOrders(env: Env, order: StoreOrder) {
+  const token = printfulToken(env)
+  if (!token) return 'PRINTFUL_API_TOKEN is not set'
+  const settings = await getSettings(env.PHOTOS_KV)
+  const storeId = await printfulStore(env, settings)
+  for (const leg of order.legs) {
+    if (!leg.gelatoOrderId) return 'Printful order was not created'
+    try {
+      await confirmPrintfulOrder(token, storeId, leg.gelatoOrderId)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Printful did not confirm the order'
+      if (!/already|confirmed|pending|in process/i.test(message)) return message
+    }
+  }
+  return ''
+}
+
+async function markPrintFulfilled(env: Env, order: StoreOrder) {
+  const confirmError = await confirmPrintOrders(env, order)
+  if (confirmError) {
+    order.status = 'fulfillment_failed'
+    order.placed = false
+    order.fulfillClaim = undefined
+    order.gelatoError = `${confirmError} The card was charged. Use Settle payment to send it to Printful again.`
+    await saveOrder(env.PHOTOS_KV, order)
+    return order
+  }
+  order.placed = true
+  order.status = 'fulfilled'
+  order.gelatoError = undefined
+  order.fulfillClaim = undefined
+  await saveOrder(env.PHOTOS_KV, order)
+  await recordTax(env, order)
+  return order
+}
+
 async function voidPrintOrders(env: Env, order: StoreOrder) {
-  if (!env.GELATO_API_KEY) return false
+  const token = printfulToken(env)
+  if (!token) return false
+  const settings = await getSettings(env.PHOTOS_KV)
+  const storeId = await printfulStore(env, settings)
   let cleared = true
   for (const leg of order.legs) {
     if (!leg.gelatoOrderId) continue
     try {
-      await cancelGelatoOrder(env.GELATO_API_KEY, leg.gelatoOrderId)
+      await cancelPrintfulOrder(token, storeId, leg.gelatoOrderId)
       leg.gelatoOrderId = undefined
       leg.error = undefined
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Gelato could not cancel the order'
+      const message = error instanceof Error ? error.message : 'Printful could not cancel the order'
       if (/already|cancel+ed|not found/i.test(message)) {
         leg.gelatoOrderId = undefined
         leg.error = undefined
@@ -591,13 +654,7 @@ async function releaseUnfinalizedCharge(env: Env, order: StoreOrder) {
     return latest
   }
   if (printAccepted(latest) && intent.status === 'succeeded') {
-    latest.placed = true
-    latest.status = 'fulfilled'
-    latest.gelatoError = undefined
-    latest.fulfillClaim = undefined
-    await saveOrder(env.PHOTOS_KV, latest)
-    await recordTax(env, latest)
-    return latest
+    return markPrintFulfilled(env, latest)
   }
   if (intent.status !== 'succeeded') {
     await releaseAuthorization(env, latest)
@@ -655,9 +712,9 @@ async function fulfill(env: Env, order: StoreOrder) {
   }
   const age = claimAge(order.fulfillClaim)
   if (order.status === 'paid' && age != null && age >= 0 && age < 45_000) return order
-  if (!env.GELATO_API_KEY) {
+  if (!printfulToken(env)) {
     order.status = 'fulfillment_failed'
-    order.gelatoError = 'GELATO_API_KEY is not set'
+    order.gelatoError = 'PRINTFUL_API_TOKEN is not set'
     await saveOrder(env.PHOTOS_KV, order)
     return order
   }
@@ -685,38 +742,39 @@ async function fulfill(env: Env, order: StoreOrder) {
       }
     }
     try {
-      const existing = await findGelatoOrder(env.GELATO_API_KEY, leg.referenceId)
+      const token = printfulToken(env)
+      const settings = await getSettings(env.PHOTOS_KV)
+      const storeId = await printfulStore(env, settings)
+      const existing = await findPrintfulOrder(token, storeId, leg.referenceId)
       if (existing) {
         leg.gelatoOrderId = existing
         leg.error = undefined
         continue
       }
-      leg.gelatoOrderId = await createGelatoOrder(
-        env.GELATO_API_KEY,
+      const items = itemsForLeg(order, leg)
+      leg.gelatoOrderId = await createPrintfulDraft(
+        token,
+        storeId,
         leg.referenceId,
-        order.email,
         leg.shipmentMethodUid,
         order.address,
-        itemsForLeg(order, leg).map((item) => ({
-          itemReferenceId: item.itemReferenceId,
-          productUid: item.productUid,
-          quantity: item.quantity,
-          files: item.files,
-          pageCount: item.pageCount,
-        })),
+        items.map((item) => ({ syncVariantId: item.variantId, quantity: item.quantity })),
       )
       leg.error = undefined
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Gelato order failed'
+      const message = error instanceof Error ? error.message : 'Printful order failed'
       try {
-        const existing = await findGelatoOrder(env.GELATO_API_KEY, leg.referenceId)
+        const token = printfulToken(env)
+        const settings = await getSettings(env.PHOTOS_KV)
+        const storeId = await printfulStore(env, settings)
+        const existing = await findPrintfulOrder(token, storeId, leg.referenceId)
         if (existing) {
           leg.gelatoOrderId = existing
           leg.error = undefined
           continue
         }
       } catch (searchError) {
-        console.error(searchError instanceof Error ? searchError.message : 'Gelato search failed')
+        console.error(searchError instanceof Error ? searchError.message : 'Printful search failed')
       }
       leg.error = message
       errors.push(message)
@@ -729,7 +787,7 @@ async function fulfill(env: Env, order: StoreOrder) {
     order.gelatoError = undefined
   } else {
     order.status = 'fulfillment_failed'
-    order.gelatoError = errors[0] || 'Gelato did not accept the order'
+    order.gelatoError = errors[0] || 'Printful did not accept the order'
   }
   order.fulfillClaim = undefined
   await saveOrder(env.PHOTOS_KV, order)
@@ -778,15 +836,7 @@ async function finalizeAuthorized(env: Env, order: StoreOrder, paymentIntentId: 
 async function capturePlacedOrder(env: Env, order: StoreOrder, paymentIntentId: string) {
   if (!env.STRIPE_SECRET_KEY) throw new HttpError(503, 'Card payments are not available right now')
   const before = await getPaymentIntent(env.STRIPE_SECRET_KEY, paymentIntentId)
-  if (before.status === 'succeeded') {
-    order.placed = true
-    order.status = 'fulfilled'
-    order.gelatoError = undefined
-    order.fulfillClaim = undefined
-    await saveOrder(env.PHOTOS_KV, order)
-    await recordTax(env, order)
-    return order
-  }
+  if (before.status === 'succeeded') return markPrintFulfilled(env, order)
   if (before.status !== 'requires_capture') {
     const cleared = await voidPrintOrders(env, order)
     await releaseAuthorization(env, order)
@@ -795,7 +845,7 @@ async function capturePlacedOrder(env: Env, order: StoreOrder, paymentIntentId: 
     order.fulfillClaim = undefined
     order.gelatoError = cleared
       ? 'The payment was not authorized, so the print order was canceled. The card was not charged.'
-      : 'The payment was not authorized. The print order still needs to be canceled in Gelato, and the card was not charged.'
+      : 'The payment was not authorized. The print order still needs to be canceled in Printful, and the card was not charged.'
     await saveOrder(env.PHOTOS_KV, order)
     return order
   }
@@ -805,13 +855,7 @@ async function capturePlacedOrder(env: Env, order: StoreOrder, paymentIntentId: 
     const message = error instanceof Error ? error.message : 'The card hold could not be captured'
     const after = await getPaymentIntent(env.STRIPE_SECRET_KEY, paymentIntentId).catch(() => null)
     if (after?.status === 'succeeded' || /already been captured|already captured/i.test(message)) {
-      order.placed = true
-      order.status = 'fulfilled'
-      order.gelatoError = undefined
-      order.fulfillClaim = undefined
-      await saveOrder(env.PHOTOS_KV, order)
-      await recordTax(env, order)
-      return order
+      return markPrintFulfilled(env, order)
     }
     const cleared = await voidPrintOrders(env, order)
     await releaseAuthorization(env, order)
@@ -820,18 +864,12 @@ async function capturePlacedOrder(env: Env, order: StoreOrder, paymentIntentId: 
     order.fulfillClaim = undefined
     order.gelatoError = cleared
       ? 'The card was not charged, so the print order was canceled.'
-      : 'The card was not charged. The print order still needs to be canceled in Gelato.'
+      : 'The card was not charged. The print order still needs to be canceled in Printful.'
     console.error(message)
     await saveOrder(env.PHOTOS_KV, order)
     return order
   }
-  order.placed = true
-  order.status = 'fulfilled'
-  order.gelatoError = undefined
-  order.fulfillClaim = undefined
-  await saveOrder(env.PHOTOS_KV, order)
-  await recordTax(env, order)
-  return order
+  return markPrintFulfilled(env, order)
 }
 
 async function syncFromStripe(env: Env, order: StoreOrder, paymentIntentId: string) {
@@ -917,7 +955,10 @@ async function adminPayload(env: Env, refresh: boolean, origin: string) {
   const catalog = await loadCatalog(env, refresh)
   const prints = await getPrintIndex(env.PHOTOS_KV)
   const uids = catalog.products.flatMap((product) => product.variants.map((variant) => variant.productUid))
-  const prices = env.GELATO_API_KEY ? await ensurePrices(env.PHOTOS_KV, env.GELATO_API_KEY, uids, 10) : new Map()
+  const token = printfulToken(env)
+  const prices = token
+    ? await ensurePrices(env.PHOTOS_KV, uids, 10, (uid) => fetchPrintfulVariantCents(token, uid))
+    : new Map<string, number | null>()
   const orders = await listOrders(env.PHOTOS_KV, 15)
   const copy = await getCopy(env.PHOTOS_KV)
   const ai = resolvedAi(env, settings)
@@ -930,14 +971,14 @@ async function adminPayload(env: Env, refresh: boolean, origin: string) {
       aiBaseUrl: settings.aiBaseUrl,
       aiModel: settings.aiModel,
     },
-    notes: env.GELATO_API_KEY
+    notes: token
       ? catalog.notes
-      : ['Set GELATO_API_KEY with wrangler secret put, then refresh.'],
+      : ['Set PRINTFUL_API_TOKEN with wrangler secret put, then refresh.'],
     fetchedAt: catalog.fetchedAt,
     coupons: await getCoupons(env.PHOTOS_KV),
     groups: await getGroups(env.PHOTOS_KV),
     secrets: {
-      gelato: Boolean(env.GELATO_API_KEY),
+      printful: Boolean(token),
       stripeSecret: Boolean(env.STRIPE_SECRET_KEY),
       stripePublishable: Boolean(publishableKey(env)),
       stripeWebhook: Boolean(env.STRIPE_WEBHOOK_SECRET),
@@ -956,16 +997,17 @@ async function adminPayload(env: Env, refresh: boolean, origin: string) {
         status: product.status,
         source: product.source,
         enabled: settings.enabled[product.id] === true,
-        sellable: isSellable(product, prints),
+        sellable: isSellable(product),
         variantCount: product.variants.length,
         variants: variantViews(product, prints, origin),
-        hasPrintFile: product.variants.every((variant) => Boolean(prints[variant.id])),
+        hasPrintFile: true,
         imageCount: productImages(product).length,
         description: shownDescription(product, copy),
         descriptionSource: copy[product.id]?.source ?? 'gelato',
         pricePending: product.variants.some((variant) => !prices.has(variant.productUid)),
         wholesaleCents: wholesale,
-        retailCents: wholesale == null ? null : withMarkup(wholesale, settings.markupPercent),
+        markupPercent: settings.markupByProduct[product.id] ?? null,
+        retailCents: wholesale == null ? null : withMarkup(wholesale, productMarkup(settings, product.id)),
       }
     }),
     orders: orders.map(adminOrder),
@@ -974,8 +1016,8 @@ async function adminPayload(env: Env, refresh: boolean, origin: string) {
 
 function caught(error: unknown, admin: boolean) {
   if (error instanceof HttpError) return json({ error: error.message }, error.status)
-  if (error instanceof GelatoError) {
-    console.error(JSON.stringify({ gelato: error.status, message: error.message }))
+  if (error instanceof GelatoError || error instanceof PrintfulError) {
+    console.error(JSON.stringify({ printer: error.status, message: error.message }))
     if (!admin && (error.status === 401 || error.status === 403)) {
       return json({ error: 'The store is not available right now.' }, 503)
     }
@@ -983,7 +1025,7 @@ function caught(error: unknown, admin: boolean) {
   }
   const message = error instanceof Error ? error.message : 'Something went wrong'
   console.error(message)
-  if (/Turn on Stripe Tax/i.test(message) || /Gelato quoted/i.test(message)) {
+  if (/Turn on Stripe Tax/i.test(message) || /Printful quoted/i.test(message)) {
     return json({ error: message }, 400)
   }
   if (admin) return json({ error: message }, 500)
@@ -998,7 +1040,7 @@ export async function handleStoreRequest(request: Request, env: Env) {
       return json({ publishableKey: publishableKey(env) })
     }
     if (path === '/api/store/products' && request.method === 'GET') return await publicList(env)
-    const productMatch = /^\/api\/store\/products\/([A-Za-z0-9_-]{8,80})$/.exec(path)
+    const productMatch = /^\/api\/store\/products\/(\d{1,15})$/.exec(path)
     if (productMatch && request.method === 'GET') return await publicOne(env, productMatch[1]!)
     if (path === '/api/store/quote' && request.method === 'POST') return await quote(request, env)
     if (path === '/api/store/review' && request.method === 'POST') return await review(request, env)
@@ -1026,7 +1068,7 @@ export async function handleStoreRequest(request: Request, env: Env) {
     if (printFile && (request.method === 'POST' || request.method === 'DELETE')) {
       return await adminPrintFile(request, env, printFile[1]!, printFile[2]!)
     }
-    const toggle = /^\/api\/admin\/store\/products\/([A-Za-z0-9_-]{8,80})$/.exec(path)
+    const toggle = /^\/api\/admin\/store\/products\/(\d{1,15})$/.exec(path)
     if (toggle && request.method === 'PATCH') return await adminToggle(request, env, toggle[1]!)
     const sync = /^\/api\/admin\/store\/orders\/(ord_[A-Za-z0-9_-]{8,80})\/sync$/.exec(path)
     if (sync && request.method === 'POST') return await adminSync(request, env, sync[1]!)
@@ -1062,18 +1104,18 @@ async function publicList(env: Env) {
   const groups = await getGroups(env.PHOTOS_KV)
   const copy = await getCopy(env.PHOTOS_KV)
   const catalog = await loadCatalog(env, false)
-  const prints = await getPrintIndex(env.PHOTOS_KV)
-  const visible = catalog.products.filter((product) => settings.enabled[product.id] === true && isSellable(product, prints))
-  const prices = env.GELATO_API_KEY
+  const visible = catalog.products.filter((product) => settings.enabled[product.id] === true && isSellable(product))
+  const token = printfulToken(env)
+  const prices = token
     ? await ensurePrices(
         env.PHOTOS_KV,
-        env.GELATO_API_KEY,
         visible.flatMap((product) => product.variants.map((variant) => variant.productUid)),
         10,
+        (uid) => fetchPrintfulVariantCents(token, uid),
       )
     : new Map<string, number | null>()
   const products = visible.map((product) =>
-    toPublic(product, settings.markupPercent, prices, categoryIdsFor(groups, product.id), copy),
+    toPublic(product, productMarkup(settings, product.id), prices, categoryIdsFor(groups, product.id), copy),
   )
   return json({
     products,
@@ -1087,20 +1129,20 @@ async function publicOne(env: Env, id: string) {
   const groups = await getGroups(env.PHOTOS_KV)
   const copy = await getCopy(env.PHOTOS_KV)
   const catalog = await loadCatalog(env, false)
-  const prints = await getPrintIndex(env.PHOTOS_KV)
   const product = catalog.products.find((item) => item.id === id)
-  if (!product || settings.enabled[product.id] !== true || !isSellable(product, prints)) {
+  if (!product || settings.enabled[product.id] !== true || !isSellable(product)) {
     return json({ error: 'That product is not in the store' }, 404)
   }
-  const prices = env.GELATO_API_KEY
+  const token = printfulToken(env)
+  const prices = token
     ? await ensurePrices(
         env.PHOTOS_KV,
-        env.GELATO_API_KEY,
         product.variants.map((variant) => variant.productUid),
         20,
+        (uid) => fetchPrintfulVariantCents(token, uid),
       )
     : new Map<string, number | null>()
-  const pub = toPublic(product, settings.markupPercent, prices, categoryIdsFor(groups, product.id), copy)
+  const pub = toPublic(product, productMarkup(settings, product.id), prices, categoryIdsFor(groups, product.id), copy)
   return json({
     product: pub,
     categories: groups.categories
@@ -1115,7 +1157,7 @@ async function quote(request: Request, env: Env) {
   const address = validateAddress((body as { address?: unknown }).address)
   if (!address.ok) throw new HttpError(400, address.error)
   const coupon = await readCoupon(env, body)
-  const priced = await priceCart(env, parseLines(body), address.address, coupon, checkoutOrigin(request))
+  const priced = await priceCart(env, parseLines(body), address.address, coupon)
   return json({
     lines: priced.lines.map((line) => ({
       productId: line.productId,
@@ -1205,7 +1247,7 @@ async function prepareCharge(request: Request, env: Env): Promise<PreparedCharge
   if (!address.ok) throw new HttpError(400, address.error)
   const shippingOptionId = typeof body.shippingOptionId === 'string' ? body.shippingOptionId : ''
   const coupon = await readCoupon(env, body)
-  const priced = await priceCart(env, parseLines(body), address.address, coupon, checkoutOrigin(request))
+  const priced = await priceCart(env, parseLines(body), address.address, coupon)
   const option = priced.shipping.find((item) => item.id === shippingOptionId)
   if (!option) throw new HttpError(400, 'Choose a shipping method again')
   const key = publishableKey(env)
@@ -1299,7 +1341,7 @@ async function checkout(request: Request, env: Env) {
       pageCount: line.pageCount,
     })),
     legs: option.legs.map((leg, index) => ({
-      referenceId: option.legs.length === 1 ? orderId : `${orderId}-${index + 1}`,
+      referenceId: printfulExternalId(orderId, index),
       itemReferenceIds: leg.itemReferenceIds,
       shipmentMethodUid: leg.shipmentMethodUid,
       name: leg.name,
@@ -1420,7 +1462,7 @@ async function webhook(request: Request, env: Env) {
 async function adminTest(request: Request, env: Env) {
   await requireAdmin(request, env)
   const settings = await getSettings(env.PHOTOS_KV)
-  const checks = await testConnections(env, settings, configuredStoreIds(env, settings))
+  const checks = await testConnections(env, settings)
   const ai = resolvedAi(env, settings)
   if (!ai.connection) {
     checks.push({
@@ -1457,8 +1499,8 @@ async function adminSettings(request: Request, env: Env) {
   }
   if ('storeId' in body) {
     const storeId = typeof body.storeId === 'string' ? body.storeId.trim() : ''
-    if (storeId && !/^[A-Za-z0-9_-]{8,80}$/.test(storeId)) {
-      throw new HttpError(400, 'Store id should be the id from the Gelato store URL')
+    if (storeId && !printfulId.test(storeId)) {
+      throw new HttpError(400, 'Printful store id should be the number from the Manual / API store')
     }
     settings.storeId = storeId
   }
@@ -1588,7 +1630,7 @@ async function adminUpdateGroup(request: Request, env: Env, kind: 'categories' |
   }
   if ('imageProductId' in body) {
     const productId = typeof body.imageProductId === 'string' ? body.imageProductId.trim() : ''
-    if (productId && !/^[A-Za-z0-9_-]{8,80}$/.test(productId)) throw new HttpError(400, 'Choose a product photo')
+    if (productId && !printfulId.test(productId)) throw new HttpError(400, 'Choose a product photo')
     group.imageProductId = productId
     if (productId) group.image = ''
   }
@@ -1612,7 +1654,7 @@ async function printFileStatus(env: Env, origin: string, product: InternalProduc
   return {
     productId: product.id,
     hasPrintFile: product.variants.every((variant) => Boolean(prints[variant.id])),
-    sellable: isSellable(product, prints),
+    sellable: isSellable(product),
     variants: variantViews(product, prints, origin),
   }
 }
@@ -1687,8 +1729,19 @@ async function adminToggle(request: Request, env: Env, id: string) {
     categoryIds?: unknown
     collectionIds?: unknown
     description?: unknown
+    markupPercent?: unknown
   }
   const settings = await getSettings(env.PHOTOS_KV)
+  if ('markupPercent' in body) {
+    if (body.markupPercent == null || body.markupPercent === '') {
+      delete settings.markupByProduct[id]
+    } else {
+      const next = clampPercent(body.markupPercent, 400)
+      if (next == null) throw new HttpError(400, 'Markup must be between 0 and 400')
+      settings.markupByProduct[id] = next
+    }
+    await saveSettings(env.PHOTOS_KV, settings)
+  }
   if ('enabled' in body) {
     settings.enabled[id] = Boolean(body.enabled)
     await saveSettings(env.PHOTOS_KV, settings)
@@ -1740,7 +1793,7 @@ async function adminDescriptions(request: Request, env: Env) {
   const targets = requested
     ? catalog.products.filter((product) => product.id === requested).slice(0, 1)
     : catalog.products.filter((product) => !copy[product.id]).slice(0, 4)
-  if (requested && !targets.length) return json({ error: 'That product is not in the Gelato catalog' }, 404)
+  if (requested && !targets.length) return json({ error: 'That product is not in the Printful catalog' }, 404)
   const updated: { id: string; title: string; description: string }[] = []
   for (const product of targets) {
     const description = await writeProductDescription(ai.connection, product)
@@ -1759,14 +1812,16 @@ async function adminCancel(request: Request, env: Env, orderId: string) {
   if (order.status === 'canceled') return json({ order: adminOrder(order) })
   const gelatoIds = order.legs.flatMap((leg) => (leg.gelatoOrderId ? [leg.gelatoOrderId] : []))
   if (gelatoIds.length) {
-    if (!env.GELATO_API_KEY) throw new HttpError(503, 'Gelato is not connected, so this print order cannot be canceled')
+    if (!printfulToken(env)) throw new HttpError(503, 'Printful is not connected, so this print order cannot be canceled')
+    const settings = await getSettings(env.PHOTOS_KV)
+    const storeId = await printfulStore(env, settings)
     for (const gelatoId of gelatoIds) {
       try {
-        await cancelGelatoOrder(env.GELATO_API_KEY, gelatoId)
+        await cancelPrintfulOrder(printfulToken(env), storeId, gelatoId)
       } catch (error) {
-        const message = error instanceof Error ? error.message : 'Gelato could not cancel the order'
+        const message = error instanceof Error ? error.message : 'Printful could not cancel the order'
         if (!/already|cancel+ed|not found/i.test(message)) {
-          throw new HttpError(400, `Gelato did not cancel ${gelatoId}. ${message}`)
+          throw new HttpError(400, `Printful did not cancel ${gelatoId}. ${message}`)
         }
       }
     }

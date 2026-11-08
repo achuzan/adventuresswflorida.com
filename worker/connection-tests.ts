@@ -1,8 +1,8 @@
-import { asArray, GelatoError, gelatoRequest } from './gelato'
+import { listPrintfulStores, PrintfulError, printfulId } from './printful'
 import type { StoreSettings } from './store-data'
 
 export type ConnectionCheck = {
-  id: 'gelato' | 'gelato-store' | 'stripe' | 'stripe-publishable' | 'stripe-webhook' | 'openai'
+  id: 'printful' | 'printful-store' | 'stripe' | 'stripe-publishable' | 'stripe-webhook' | 'openai'
   name: string
   status: 'ok' | 'warn' | 'fail'
   detail: string
@@ -41,73 +41,53 @@ async function stripeCall(key: string, path: string): Promise<StripeCall> {
   }
 }
 
-async function testGelatoKey(apiKey: string | undefined): Promise<ConnectionCheck> {
-  if (!apiKey) return check('gelato', 'Gelato', 'fail', 'Missing GELATO_API_KEY.')
+async function testPrintful(token: string | undefined, storeId: string): Promise<ConnectionCheck[]> {
+  if (!token) {
+    return [
+      check('printful', 'Printful', 'fail', 'Missing PRINTFUL_API_TOKEN.'),
+      check('printful-store', 'Printful store', 'fail', 'Printful cannot be checked until PRINTFUL_API_TOKEN is set.'),
+    ]
+  }
+  let stores: { id: string; name: string; type: string }[]
   try {
-    await gelatoRequest(apiKey, 'https://order.gelatoapis.com/v4/orders:search', {
-      method: 'POST',
-      body: JSON.stringify({ orderReferenceIds: ['connection-test-none'], limit: 1 }),
-    })
-    return check('gelato', 'Gelato', 'ok', 'Gelato accepted the API key.')
+    stores = await listPrintfulStores(token)
   } catch (error) {
-    if (error instanceof GelatoError && (error.status === 401 || error.status === 403)) {
-      return check('gelato', 'Gelato', 'fail', 'Gelato rejected the API key.')
-    }
-    const message = error instanceof Error ? error.message : 'Gelato did not respond.'
-    return check('gelato', 'Gelato', 'fail', message)
+    const rejected = error instanceof PrintfulError && (error.status === 401 || error.status === 403)
+    const message = rejected ? 'Printful rejected the API token.' : error instanceof Error ? error.message : 'Printful did not respond.'
+    return [
+      check('printful', 'Printful', 'fail', message),
+      check('printful-store', 'Printful store', 'fail', 'Printful did not accept the token, so the store was not checked.'),
+    ]
   }
-}
-
-async function testGelatoStore(apiKey: string | undefined, storeIds: string[], templateIds: string[]): Promise<ConnectionCheck> {
-  if (!apiKey) return check('gelato-store', 'Gelato store', 'fail', 'Gelato cannot be checked until GELATO_API_KEY is set.')
-  if (!storeIds.length && !templateIds.length) {
-    return check(
-      'gelato-store',
-      'Gelato store',
-      'fail',
-      'No store id is saved. Open the Manual store in Gelato and paste the id from the address bar.',
-    )
+  const account = check('printful', 'Printful', 'ok', 'Printful accepted the API token.')
+  if (storeId && !printfulId.test(storeId)) {
+    return [account, check('printful-store', 'Printful store', 'fail', 'The saved store id is not a Printful store number.')]
   }
-  const notes: string[] = []
-  let failed = false
-  for (const storeId of storeIds) {
-    const label = `${storeId.slice(0, 8)}…`
-    try {
-      const data = await gelatoRequest<unknown>(
-        apiKey,
-        `https://ecommerce.gelatoapis.com/v1/stores/${encodeURIComponent(storeId)}/products?order=desc&orderBy=createdAt&offset=0&limit=1`,
-      )
-      const count = asArray(data, ['products', 'data']).length
-      notes.push(
-        count
-          ? `Store ${label} responded and has products.`
-          : `Store ${label} responded, and it has no products yet.`,
-      )
-    } catch (error) {
-      failed = true
-      if (error instanceof GelatoError && error.status === 404) {
-        notes.push(`Gelato has no store ${label}. Copy the id from the Manual store address bar.`)
-      } else if (error instanceof GelatoError && (error.status === 401 || error.status === 403)) {
-        notes.push(`Gelato refused access to store ${label}.`)
-      } else {
-        notes.push(error instanceof Error ? error.message : `Store ${label} could not be checked.`)
-      }
-    }
+  if (storeId && !stores.some((store) => store.id === storeId)) {
+    return [account, check('printful-store', 'Printful store', 'fail', 'That store id is not on this Printful account.')]
   }
-  let templatesOk = 0
-  for (const templateId of templateIds.slice(0, 5)) {
-    try {
-      await gelatoRequest(apiKey, `https://ecommerce.gelatoapis.com/v1/templates/${encodeURIComponent(templateId)}`)
-      templatesOk += 1
-    } catch {
-      failed = true
-    }
+  if (!storeId && stores.length > 1) {
+    return [
+      account,
+      check('printful-store', 'Printful store', 'warn', 'This account has more than one store. Paste the Manual / API store id in settings.'),
+    ]
   }
-  if (templateIds.length) {
-    const shown = Math.min(templateIds.length, 5)
-    notes.push(`${templatesOk} of ${shown} template id${shown === 1 ? '' : 's'} loaded.`)
+  const chosen = stores.find((store) => store.id === storeId) ?? stores[0]
+  if (!chosen) {
+    return [account, check('printful-store', 'Printful store', 'fail', 'Create a Manual order / API store in Printful, then refresh.')]
   }
-  return check('gelato-store', 'Gelato store', failed ? 'fail' : 'ok', notes.join(' '))
+  const manual = /api|manual|native/i.test(chosen.type)
+  return [
+    account,
+    check(
+      'printful-store',
+      'Printful store',
+      manual ? 'ok' : 'warn',
+      manual
+        ? `Connected to ${chosen.name}.`
+        : `Connected to ${chosen.name}. Use a Manual order / API store so this site can place the orders.`,
+    ),
+  ]
 }
 
 async function testStripeSecret(secretKey: string | undefined): Promise<ConnectionCheck> {
@@ -269,17 +249,13 @@ async function testWebhook(secretKey: string | undefined, webhookSecret: string 
   }
 }
 
-export async function testConnections(
-  env: Env,
-  settings: Pick<StoreSettings, 'storeId' | 'templateIds'>,
-  storeIds: string[],
-): Promise<ConnectionCheck[]> {
+export async function testConnections(env: Env, settings: Pick<StoreSettings, 'storeId'>): Promise<ConnectionCheck[]> {
   const publishable = env.STRIPE_PUBLISHABLE_KEY
-  return Promise.all([
-    testGelatoKey(env.GELATO_API_KEY),
-    testGelatoStore(env.GELATO_API_KEY, storeIds.length ? storeIds : settings.storeId ? [settings.storeId] : [], settings.templateIds),
+  const [printful, stripe, stripeKey, webhook] = await Promise.all([
+    testPrintful(env.PRINTFUL_API_TOKEN, (settings.storeId || env.PRINTFUL_STORE_ID || '').trim()),
     testStripeSecret(env.STRIPE_SECRET_KEY),
     testPublishable(env.STRIPE_SECRET_KEY, publishable),
     testWebhook(env.STRIPE_SECRET_KEY, env.STRIPE_WEBHOOK_SECRET),
   ])
+  return [...printful, stripe, stripeKey, webhook]
 }

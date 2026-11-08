@@ -144,7 +144,7 @@ export function StorePage() {
     <div className="page page--store">
       <SeoHead
         title={`${home ? 'Store' : heading} · ${site.shortBrand}`}
-        description="Order wildlife photography prints, calendars, and mugs from Adventures in Southwest Florida. Printed to order and shipped by Gelato."
+        description="Order wildlife photography prints, calendars, and mugs from Adventures in Southwest Florida. Printed to order and shipped by Printful."
         path={category ? `/store/category/${category.id}` : collection ? `/store/collection/${collection.id}` : '/store'}
       />
 

@@ -8,6 +8,8 @@ interface Env {
   SESSION_SECRET: string
   GELATO_API_KEY?: string
   GELATO_STORE_ID?: string
+  PRINTFUL_API_TOKEN?: string
+  PRINTFUL_STORE_ID?: string
   STRIPE_SECRET_KEY?: string
   STRIPE_PUBLISHABLE_KEY?: string
   STRIPE_WEBHOOK_SECRET?: string

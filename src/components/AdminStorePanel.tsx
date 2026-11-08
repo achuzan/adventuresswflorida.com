@@ -25,13 +25,6 @@ type AdminVariant = {
   printFile: { name: string; source: 'upload' | 'link'; href: string } | null
 }
 
-type PrintStatus = {
-  productId: string
-  hasPrintFile: boolean
-  sellable: boolean
-  variants: AdminVariant[]
-}
-
 type AdminProduct = {
   id: string
   title: string
@@ -50,6 +43,7 @@ type AdminProduct = {
   pricePending: boolean
   wholesaleCents: number | null
   retailCents: number | null
+  markupPercent: number | null
 }
 
 type AdminOrder = {
@@ -117,7 +111,7 @@ type AdminStore = {
   coupons: StoreCoupon[]
   groups: { categories: StoreGroup[]; collections: StoreGroup[] }
   secrets: {
-    gelato: boolean
+    printful: boolean
     stripeSecret: boolean
     stripePublishable: boolean
     stripeWebhook: boolean
@@ -130,87 +124,6 @@ type AdminStore = {
   orders: AdminOrder[]
 }
 
-function isCalendarProduct(product: { productType: string; title: string }) {
-  return /calendar/i.test(`${product.productType} ${product.title}`)
-}
-
-function PrintFiles({
-  product,
-  busy,
-  onUpload,
-  onLink,
-  onRemove,
-}: {
-  product: AdminProduct
-  busy: boolean
-  onUpload: (product: AdminProduct, variantId: string, file: File) => void
-  onLink: (product: AdminProduct, variantId: string, url: string) => void
-  onRemove: (product: AdminProduct, variantId: string) => void
-}) {
-  const [links, setLinks] = useState<Record<string, string>>({})
-  const calendar = isCalendarProduct(product)
-  return (
-    <div>
-      <p className="admin-hint">
-        {calendar
-          ? 'Upload the calendar PDF once. Every order of this product sends that same file.'
-          : 'Upload the photo for each size once. Every order of that size sends the same file.'}
-      </p>
-      <ul className="store-print-files">
-        {(product.variants ?? []).map((variant) => (
-          <li key={variant.id}>
-            <strong>{variant.title}</strong>
-            {variant.printFile ? (
-              <span>
-                {variant.printFile.source === 'link' ? 'Public link' : 'Uploaded file'} · {variant.printFile.name}{' '}
-                <a href={variant.printFile.href} target="_blank" rel="noreferrer">
-                  Open
-                </a>
-              </span>
-            ) : (
-              <span>No print file yet</span>
-            )}
-            <label>
-              {calendar ? 'Calendar PDF' : 'Photo or PDF'}
-              <input
-                type="file"
-                accept={calendar ? '.pdf,application/pdf' : '.jpg,.jpeg,.png,.webp,.pdf,image/jpeg,image/png,image/webp,application/pdf'}
-                disabled={busy}
-                onChange={(event) => {
-                  const file = event.target.files?.[0]
-                  event.target.value = ''
-                  if (file) onUpload(product, variant.id, file)
-                }}
-              />
-            </label>
-            <form
-              onSubmit={(event) => {
-                event.preventDefault()
-                onLink(product, variant.id, links[variant.id] ?? '')
-              }}
-            >
-              <input
-                type="url"
-                value={links[variant.id] ?? ''}
-                placeholder="Or paste a public https link that downloads the file"
-                onChange={(event) => setLinks((current) => ({ ...current, [variant.id]: event.target.value }))}
-              />
-              <button className="btn btn--ghost" type="submit" disabled={busy}>
-                Save link
-              </button>
-            </form>
-            {variant.printFile && (
-              <button type="button" className="text-link" disabled={busy} onClick={() => onRemove(product, variant.id)}>
-                Remove print file
-              </button>
-            )}
-          </li>
-        ))}
-      </ul>
-    </div>
-  )
-}
-
 export function AdminStorePanel() {
   const [data, setData] = useState<AdminStore | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -219,7 +132,6 @@ export function AdminStorePanel() {
   const [markup, setMarkup] = useState('0')
   const [shippingMarkup, setShippingMarkup] = useState('0')
   const [storeId, setStoreId] = useState('')
-  const [templateIds, setTemplateIds] = useState('')
   const [checks, setChecks] = useState<ConnectionCheck[] | null>(null)
   const [testing, setTesting] = useState(false)
   const [couponCode, setCouponCode] = useState('')
@@ -232,6 +144,7 @@ export function AdminStorePanel() {
   const [aiApiKey, setAiApiKey] = useState('')
   const [clearOpenai, setClearOpenai] = useState(false)
   const [drafts, setDrafts] = useState<Record<string, string>>({})
+  const [markupDrafts, setMarkupDrafts] = useState<Record<string, string>>({})
 
   async function load(refresh = false, fillForm = false, mergePrices = false) {
     const payload = refresh
@@ -265,7 +178,6 @@ export function AdminStorePanel() {
       setMarkup(String(payload.settings.markupPercent))
       setShippingMarkup(String(payload.settings.shippingMarkupPercent))
       setStoreId(payload.settings.storeId)
-      setTemplateIds(payload.settings.templateIds.join('\n'))
       setAiBaseUrl(payload.settings.aiBaseUrl)
       setAiModel(payload.settings.aiModel)
     }
@@ -304,7 +216,7 @@ export function AdminStorePanel() {
     setNotice(null)
     try {
       await loadSettings()
-      setNotice('Saved store settings. Refresh products if you changed the store or template ids.')
+      setNotice('Saved store settings. Refresh products if you changed the store id.')
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not save settings')
     } finally {
@@ -320,7 +232,6 @@ export function AdminStorePanel() {
         markupPercent: Number(markup),
         shippingMarkupPercent: Number(shippingMarkup),
         storeId,
-        templateIds,
         aiBaseUrl,
         aiModel,
         ...(aiApiKey.trim() ? { aiApiKey } : {}),
@@ -603,7 +514,7 @@ export function AdminStorePanel() {
       })
       setNotice(
         payload.updated.length
-          ? `Wrote ${payload.updated.length} description${payload.updated.length === 1 ? '' : 's'}.${payload.remaining ? ` ${payload.remaining} still use the Gelato text.` : ''}`
+          ? `Wrote ${payload.updated.length} description${payload.updated.length === 1 ? '' : 's'}.${payload.remaining ? ` ${payload.remaining} still need a description.` : ''}`
           : 'Every product already has a store description.',
       )
     } catch (err) {
@@ -629,102 +540,35 @@ export function AdminStorePanel() {
     }
   }
 
+  async function saveMarkup(product: AdminProduct) {
+    const raw = (markupDrafts[product.id] ?? (product.markupPercent == null ? '' : String(product.markupPercent))).trim()
+    setBusy(true)
+    setError(null)
+    setNotice(null)
+    try {
+      await storeJson(`/api/admin/store/products/${encodeURIComponent(product.id)}`, {
+        method: 'PATCH',
+        credentials: 'same-origin',
+        body: JSON.stringify({ markupPercent: raw === '' ? null : Number(raw) }),
+      })
+      await load()
+      setNotice(raw === '' ? `Using the default markup for ${product.title}` : `Saved ${raw}% markup for ${product.title}`)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not save that markup')
+    } finally {
+      setBusy(false)
+    }
+  }
+
   async function refresh() {
     setBusy(true)
     setError(null)
     setNotice(null)
     try {
       await load(true)
-      setNotice('Reloaded products from Gelato.')
+      setNotice('Reloaded products from Printful.')
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not refresh Gelato')
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  function applyPrint(productId: string, status: PrintStatus) {
-    setData((current) =>
-      current
-        ? {
-            ...current,
-            products: current.products.map((product) =>
-              product.id === productId
-                ? {
-                    ...product,
-                    variants: status.variants,
-                    hasPrintFile: status.hasPrintFile,
-                    sellable: status.sellable,
-                  }
-                : product,
-            ),
-          }
-        : current,
-    )
-  }
-
-  async function readPrintResponse(res: Response) {
-    const data = (await res.json().catch(() => null)) as (PrintStatus & { error?: string }) | null
-    if (!res.ok || !data?.variants) throw new Error(data?.error || 'Could not save that print file')
-    return data
-  }
-
-  async function uploadPrint(product: AdminProduct, variantId: string, file: File) {
-    setBusy(true)
-    setError(null)
-    setNotice(null)
-    try {
-      const body = new FormData()
-      body.set('file', file)
-      const res = await fetch(
-        `/api/admin/store/products/${encodeURIComponent(product.id)}/variants/${encodeURIComponent(variantId)}/file`,
-        { method: 'POST', credentials: 'same-origin', body },
-      )
-      applyPrint(product.id, await readPrintResponse(res))
-      setNotice(`Saved the print file for ${product.title}. Every order of that size sends it.`)
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not upload that print file')
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  async function savePrintLink(product: AdminProduct, variantId: string, url: string) {
-    setBusy(true)
-    setError(null)
-    setNotice(null)
-    try {
-      const res = await fetch(
-        `/api/admin/store/products/${encodeURIComponent(product.id)}/variants/${encodeURIComponent(variantId)}/file`,
-        {
-          method: 'POST',
-          credentials: 'same-origin',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ url }),
-        },
-      )
-      applyPrint(product.id, await readPrintResponse(res))
-      setNotice(`Saved the print link for ${product.title}. Every order of that size sends it.`)
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not save that print link')
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  async function removePrint(product: AdminProduct, variantId: string) {
-    setBusy(true)
-    setError(null)
-    setNotice(null)
-    try {
-      const res = await fetch(
-        `/api/admin/store/products/${encodeURIComponent(product.id)}/variants/${encodeURIComponent(variantId)}/file`,
-        { method: 'DELETE', credentials: 'same-origin' },
-      )
-      applyPrint(product.id, await readPrintResponse(res))
-      setNotice(`Removed the print file from ${product.title}`)
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not remove that print file')
+      setError(err instanceof Error ? err.message : 'Could not refresh Printful')
     } finally {
       setBusy(false)
     }
@@ -755,7 +599,7 @@ export function AdminStorePanel() {
     const refund = order.status === 'paid' || order.status === 'fulfilled' || order.status === 'fulfillment_failed'
     const confirmed = window.confirm(
       refund
-        ? 'Cancel this order? A completed card payment is refunded, and Gelato is asked to stop the print.'
+        ? 'Cancel this order? A completed card payment is refunded, and Printful is asked to stop the print.'
         : 'Cancel this order? The card payment will be stopped if it has not been completed.',
     )
     if (!confirmed) return
@@ -814,7 +658,7 @@ export function AdminStorePanel() {
             <div>
               <div className="store-actions">
                 <button type="button" className="btn btn--ghost" disabled={busy} onClick={() => void refresh()}>
-                  Refresh from Gelato
+                  Refresh from Printful
                 </button>
                 <button type="button" className="btn btn--accent" disabled={busy} onClick={() => void writeDescriptions()}>
                   Write missing descriptions
@@ -822,8 +666,8 @@ export function AdminStorePanel() {
                 <p className="admin-hint">Last pull {new Date(data.fetchedAt).toLocaleString()}</p>
               </div>
               <p className="admin-hint">
-                Upload each size’s print file once. Every order of that size sends the same file to Gelato. Prints and
-                mugs take a photo. Calendars take the PDF made from Gelato’s template.
+                Products come from the Printful store, with the design you saved there. Turn one on to sell it. Leave
+                the markup blank to use the default print markup.
               </p>
               {data.notes.length > 0 && (
                 <ul className="admin-hint">
@@ -833,7 +677,7 @@ export function AdminStorePanel() {
                 </ul>
               )}
               {data.products.length === 0 ? (
-                <p>No Gelato products yet. Create them in Gelato, then refresh.</p>
+                <p>No Printful products yet. Create them in the Manual / API store, then refresh.</p>
               ) : (
                 <ul className="store-admin-list">
                   {data.products.map((product) => (
@@ -849,36 +693,36 @@ export function AdminStorePanel() {
                           {product.source} · {product.status || 'active'} · {product.variantCount} variant
                           {product.variantCount === 1 ? '' : 's'}
                           {product.productType ? ` · ${product.productType}` : ''}
-                          {product.status === 'publishing'
-                            ? ' · Gelato is still publishing this product'
-                            : product.status === 'publishing_error'
-                              ? ' · Gelato could not publish this product'
-                              : ''}
+                          {product.status === 'unsynced' ? ' · Finish the design in Printful before this can be sold' : ''}
                         </p>
                         <p>
                           {product.pricePending && product.wholesaleCents == null
-                            ? 'Loading Gelato cost…'
+                            ? 'Loading Printful cost…'
                             : product.wholesaleCents == null
-                              ? 'Gelato did not return a US price'
-                              : `Gelato cost ${formatUsd(product.wholesaleCents)} · customer ${formatUsd(product.retailCents ?? 0)}`}
+                              ? 'Printful did not return a US price'
+                              : `Printful cost ${formatUsd(product.wholesaleCents)} · customer ${formatUsd(product.retailCents ?? 0)}`}
                         </p>
-                        <PrintFiles
-                          product={product}
-                          busy={busy}
-                          onUpload={(item, variantId, file) => void uploadPrint(item, variantId, file)}
-                          onLink={(item, variantId, url) => void savePrintLink(item, variantId, url)}
-                          onRemove={(item, variantId) => void removePrint(item, variantId)}
-                        />
+                        <label>
+                          Markup % override
+                          <input
+                            inputMode="decimal"
+                            value={
+                              markupDrafts[product.id] ??
+                              (product.markupPercent == null ? '' : String(product.markupPercent))
+                            }
+                            placeholder={`Default ${data.settings.markupPercent}%`}
+                            onChange={(event) =>
+                              setMarkupDrafts((current) => ({ ...current, [product.id]: event.target.value }))
+                            }
+                          />
+                        </label>
+                        <button type="button" className="btn btn--ghost" disabled={busy} onClick={() => void saveMarkup(product)}>
+                          Save markup
+                        </button>
                         <label className="admin-check">
                           <input type="checkbox" checked={product.enabled} onChange={() => void toggle(product)} />
                           Show in the store
                         </label>
-                        {product.enabled &&
-                          product.status !== 'publishing' &&
-                          product.status !== 'publishing_error' &&
-                          !product.hasPrintFile && (
-                            <p className="admin-hint">Hidden in the shop until every size has a print file.</p>
-                          )}
                         <label>
                           Store description
                           <textarea
@@ -894,8 +738,8 @@ export function AdminStorePanel() {
                             ? 'Written with the connected AI. You can edit it.'
                             : product.descriptionSource === 'edited'
                               ? 'Edited in this admin.'
-                              : 'Showing the Gelato description.'}
-                          {product.imageCount > 1 ? ` ${product.imageCount} images from Gelato.` : ''}
+                              : 'Showing the Printful description.'}
+                          {product.imageCount > 1 ? ` ${product.imageCount} images from Printful.` : ''}
                         </p>
                         <div className="store-actions">
                           <button type="button" className="btn btn--ghost" disabled={busy} onClick={() => void saveDescription(product)}>
@@ -1061,8 +905,8 @@ export function AdminStorePanel() {
           {section === 'coupons' && (
             <div>
               <p className="admin-hint">
-                A coupon removes a percent of the print and shipping markup. Gelato’s cost is never discounted. 100%
-                means the customer pays Gelato’s price.
+                A coupon removes a percent of the print and shipping markup. Printful’s cost is never discounted. 100%
+                means the customer pays Printful’s price.
               </p>
               <form className="admin-grid" onSubmit={(event) => void addCoupon(event)}>
                 <label>
@@ -1167,7 +1011,7 @@ export function AdminStorePanel() {
                         </li>
                       </ul>
                       {order.stripePaymentIntentId && <span>Stripe {order.stripePaymentIntentId}</span>}
-                      {order.gelatoOrderIds.length > 0 && <span>Gelato {order.gelatoOrderIds.join(', ')}</span>}
+                      {order.gelatoOrderIds.length > 0 && <span>Printful {order.gelatoOrderIds.join(', ')}</span>}
                       {order.gelatoError && <span className="admin-error">{order.gelatoError}</span>}
                       <div className="store-order__actions">
                         {order.status !== 'canceled' && order.status !== 'fulfilled' && (
@@ -1191,11 +1035,11 @@ export function AdminStorePanel() {
           {section === 'settings' && (
             <div>
               <p className="admin-hint">
-                Gelato’s price is what Gelato charges this account. Markup is added for the customer. Stripe takes the
-                card payment.
+                Printful’s price is what Printful charges this account. The print markup is the default. A product can
+                override that percentage. Stripe takes the card payment.
               </p>
               <ul className="store-secrets">
-                <li>{data.secrets.gelato ? 'Gelato API key is set' : 'Missing GELATO_API_KEY'}</li>
+                <li>{data.secrets.printful ? 'Printful API token is set' : 'Missing PRINTFUL_API_TOKEN'}</li>
                 <li>{data.secrets.stripeSecret ? 'Stripe secret key is set' : 'Missing STRIPE_SECRET_KEY'}</li>
                 <li>
                   {data.secrets.stripePublishable ? 'Stripe publishable key is set' : 'Missing STRIPE_PUBLISHABLE_KEY'}
@@ -1239,16 +1083,16 @@ export function AdminStorePanel() {
                   />
                 </label>
                 <label className="admin-span-2">
-                  Gelato store id
+                  Printful store id
                   <input
                     value={storeId}
                     onChange={(event) => setStoreId(event.target.value)}
-                    placeholder="From the store URL in the Gelato dashboard"
+                    placeholder="Leave blank if the account has one store"
                   />
                 </label>
                 <p className="admin-hint admin-span-2">
-                  This id only lists the designs. Orders are sent with the print file on each product, not through the
-                  Gelato store.
+                  Create the products in a Printful store set to Manual order / API. Paste that store’s number here if
+                  the account has more than one store. Orders use the design saved on the product.
                 </p>
                 <label className="admin-span-2">
                   AI API URL
@@ -1287,15 +1131,6 @@ export function AdminStorePanel() {
                   https://generativelanguage.googleapis.com/v1beta/openai and a model such as gemini-2.5-flash. The
                   address has to be reachable from the internet. The key is not shown again after you save it.
                 </p>
-                <label className="admin-span-2">
-                  Template ids
-                  <textarea
-                    rows={3}
-                    value={templateIds}
-                    onChange={(event) => setTemplateIds(event.target.value)}
-                    placeholder="One Gelato template id per line, if products were saved as templates"
-                  />
-                </label>
                 <div className="admin-span-2 store-actions">
                   <button className="btn btn--accent" type="submit" disabled={busy}>
                     Save settings

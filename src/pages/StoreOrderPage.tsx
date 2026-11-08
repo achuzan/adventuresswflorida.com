@@ -97,7 +97,7 @@ export function StoreOrderPage() {
           )}
           {order.printStatus === 'sent' && (
             <p>
-              Gelato has the order and will email {order.email} when it ships
+              Printful has the order and will email {order.email} when it ships
               {order.minDeliveryDays ? `, usually within ${deliveryLabel(order.minDeliveryDays, order.maxDeliveryDays)}` : ''}.
             </p>
           )}

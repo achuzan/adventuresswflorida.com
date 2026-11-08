@@ -289,7 +289,7 @@ export function StoreCheckoutPage() {
 
           {error && <p className="store-error">{error}</p>}
           <button className="btn btn--accent" type="submit" disabled={busy || items.length === 0}>
-            {busy ? 'Contacting Gelato…' : quote ? 'Continue to payment' : 'Calculate shipping'}
+            {busy ? 'Contacting Printful…' : quote ? 'Continue to payment' : 'Calculate shipping'}
           </button>
         </form>
       )}
