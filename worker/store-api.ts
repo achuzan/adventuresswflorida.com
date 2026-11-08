@@ -959,7 +959,7 @@ async function adminPayload(env: Env, refresh: boolean, origin: string) {
   const prices = token
     ? await ensurePrices(env.PHOTOS_KV, uids, 10, (uid) => fetchPrintfulVariantCents(token, uid))
     : new Map<string, number | null>()
-  const orders = await listOrders(env.PHOTOS_KV, 15)
+  const orders = await listOrders(env.PHOTOS_KV, 80)
   const copy = await getCopy(env.PHOTOS_KV)
   const ai = resolvedAi(env, settings)
   return {

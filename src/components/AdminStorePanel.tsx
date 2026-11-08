@@ -82,6 +82,27 @@ type ConnectionCheck = {
   detail: string
 }
 
+function orderIsOpen(status: string) {
+  return status === 'pending' || status === 'paid' || status === 'fulfillment_failed'
+}
+
+function orderLabel(status: string) {
+  if (status === 'pending') return 'Awaiting payment'
+  if (status === 'paid') return 'Processing'
+  if (status === 'fulfillment_failed') return 'Needs attention'
+  if (status === 'fulfilled') return 'Fulfilled'
+  if (status === 'canceled') return 'Canceled'
+  if (status === 'payment_failed') return 'Payment failed'
+  return status.replaceAll('_', ' ')
+}
+
+function productBadge(product: AdminProduct) {
+  if (product.status === 'unsynced') return { label: 'Needs design', tone: 'warn' }
+  if (product.enabled && product.sellable) return { label: 'Active', tone: 'live' }
+  if (product.enabled) return { label: 'Not for sale', tone: 'warn' }
+  return { label: 'Draft', tone: 'draft' }
+}
+
 type StoreCoupon = {
   code: string
   percent: number
@@ -139,6 +160,7 @@ export function AdminStorePanel() {
   const [categoryName, setCategoryName] = useState('')
   const [collectionName, setCollectionName] = useState('')
   const [section, setSection] = useState<'products' | 'catalog' | 'coupons' | 'orders' | 'settings'>('products')
+  const [orderView, setOrderView] = useState<'open' | 'closed'>('open')
   const [aiBaseUrl, setAiBaseUrl] = useState('')
   const [aiModel, setAiModel] = useState('')
   const [aiApiKey, setAiApiKey] = useState('')
@@ -587,7 +609,7 @@ export function AdminStorePanel() {
           ? { ...current, orders: current.orders.map((item) => (item.id === payload.order.id ? payload.order : item)) }
           : current,
       )
-      setNotice(`Updated order ${payload.order.id}: ${payload.order.status.replaceAll('_', ' ')}`)
+      setNotice(`Updated order ${payload.order.id}: ${orderLabel(payload.order.status)}`)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not sync that order')
     } finally {
@@ -644,7 +666,7 @@ export function AdminStorePanel() {
                 ['products', `Products (${data.products.length})`],
                 ['catalog', 'Categories'],
                 ['coupons', `Coupons (${data.coupons?.length ?? 0})`],
-                ['orders', `Orders (${data.orders.length})`],
+                ['orders', `Orders (${data.orders.filter((order) => orderIsOpen(order.status)).length})`],
                 ['settings', 'Settings'],
               ] as const
             ).map(([id, label]) => (
@@ -663,12 +685,7 @@ export function AdminStorePanel() {
                 <button type="button" className="btn btn--accent" disabled={busy} onClick={() => void writeDescriptions()}>
                   Write missing descriptions
                 </button>
-                <p className="admin-hint">Last pull {new Date(data.fetchedAt).toLocaleString()}</p>
               </div>
-              <p className="admin-hint">
-                Products come from the Printful store, with the design you saved there. Turn one on to sell it. Leave
-                the markup blank to use the default print markup.
-              </p>
               {data.notes.length > 0 && (
                 <ul className="admin-hint">
                   {data.notes.map((note) => (
@@ -677,109 +694,117 @@ export function AdminStorePanel() {
                 </ul>
               )}
               {data.products.length === 0 ? (
-                <p>No Printful products yet. Create them in the Manual / API store, then refresh.</p>
+                <p>No products yet. Create them in Printful, then refresh.</p>
               ) : (
                 <ul className="store-admin-list">
-                  {data.products.map((product) => (
-                    <li key={product.id} className="store-admin-product">
-                      {product.previewUrl ? (
-                        <img src={product.previewUrl} alt="" className="admin-photo-row__thumb" />
-                      ) : (
-                        <span className="admin-photo-row__thumb store-card__fallback" />
-                      )}
-                      <div>
-                        <strong>{product.title}</strong>
-                        <p className="admin-hint">
-                          {product.source} · {product.status || 'active'} · {product.variantCount} variant
-                          {product.variantCount === 1 ? '' : 's'}
-                          {product.productType ? ` · ${product.productType}` : ''}
-                          {product.status === 'unsynced' ? ' · Finish the design in Printful before this can be sold' : ''}
-                        </p>
-                        <p>
-                          {product.pricePending && product.wholesaleCents == null
-                            ? 'Loading Printful cost…'
-                            : product.wholesaleCents == null
-                              ? 'Printful did not return a US price'
-                              : `Printful cost ${formatUsd(product.wholesaleCents)} · customer ${formatUsd(product.retailCents ?? 0)}`}
-                        </p>
-                        <label>
-                          Markup % override
-                          <input
-                            inputMode="decimal"
-                            value={
-                              markupDrafts[product.id] ??
-                              (product.markupPercent == null ? '' : String(product.markupPercent))
-                            }
-                            placeholder={`Default ${data.settings.markupPercent}%`}
-                            onChange={(event) =>
-                              setMarkupDrafts((current) => ({ ...current, [product.id]: event.target.value }))
-                            }
-                          />
-                        </label>
-                        <button type="button" className="btn btn--ghost" disabled={busy} onClick={() => void saveMarkup(product)}>
-                          Save markup
-                        </button>
-                        <label className="admin-check">
-                          <input type="checkbox" checked={product.enabled} onChange={() => void toggle(product)} />
-                          Show in the store
-                        </label>
-                        <label>
-                          Store description
-                          <textarea
-                            rows={4}
-                            value={drafts[product.id] ?? product.description}
-                            onChange={(event) =>
-                              setDrafts((current) => ({ ...current, [product.id]: event.target.value }))
-                            }
-                          />
-                        </label>
-                        <p className="admin-hint">
-                          {product.descriptionSource === 'openai'
-                            ? 'Written with the connected AI. You can edit it.'
-                            : product.descriptionSource === 'edited'
-                              ? 'Edited in this admin.'
-                              : 'Showing the Printful description.'}
-                          {product.imageCount > 1 ? ` ${product.imageCount} images from Printful.` : ''}
-                        </p>
-                        <div className="store-actions">
-                          <button type="button" className="btn btn--ghost" disabled={busy} onClick={() => void saveDescription(product)}>
-                            Save description
-                          </button>
-                          <button type="button" className="text-link" disabled={busy} onClick={() => void writeDescriptions(product.id)}>
-                            Rewrite description
-                          </button>
-                        </div>
-                        {(groups.categories.length > 0 || groups.collections.length > 0) && (
-                          <div className="store-assign">
-                            {groups.categories.map((group) => (
-                              <label key={group.id} className="admin-check">
-                                <input
-                                  type="checkbox"
-                                  checked={group.productIds.includes(product.id)}
-                                  onChange={(event) =>
-                                    void setMembership(product, 'categories', group.id, event.target.checked)
-                                  }
-                                />
-                                {group.name}
-                              </label>
-                            ))}
-                            {groups.collections.map((group) => (
-                              <label key={group.id} className="admin-check">
-                                <input
-                                  type="checkbox"
-                                  checked={group.productIds.includes(product.id)}
-                                  onChange={(event) =>
-                                    void setMembership(product, 'collections', group.id, event.target.checked)
-                                  }
-                                />
-                                Collection: {group.name}
-                              </label>
-                            ))}
-                          </div>
+                  {data.products.map((product) => {
+                    const badge = productBadge(product)
+                    const price =
+                      product.pricePending && product.wholesaleCents == null
+                        ? 'Loading price…'
+                        : product.wholesaleCents == null
+                          ? 'No price yet'
+                          : `${formatUsd(product.wholesaleCents)} cost · ${formatUsd(product.retailCents ?? 0)} price`
+                    return (
+                      <li key={product.id} className="store-admin-product">
+                        {product.previewUrl ? (
+                          <img src={product.previewUrl} alt="" className="admin-photo-row__thumb" />
+                        ) : (
+                          <span className="admin-photo-row__thumb store-card__fallback" />
                         )}
-                      </div>
-                    </li>
-                  ))}
+                        <div>
+                          <div className="store-product__row">
+                            <div>
+                              <strong>{product.title}</strong>
+                              <p className="admin-hint">
+                                {product.variantCount} size{product.variantCount === 1 ? '' : 's'}
+                                {product.productType ? ` · ${product.productType}` : ''}
+                              </p>
+                            </div>
+                            <span className={`store-badge store-badge--${badge.tone}`}>{badge.label}</span>
+                            <p className="store-product__price">{price}</p>
+                            <label className="admin-check">
+                              <input type="checkbox" checked={product.enabled} onChange={() => void toggle(product)} />
+                              On store
+                            </label>
+                          </div>
+                          <details className="store-product__edit">
+                            <summary>Edit</summary>
+                            <label>
+                              Markup %
+                              <input
+                                inputMode="decimal"
+                                value={
+                                  markupDrafts[product.id] ??
+                                  (product.markupPercent == null ? '' : String(product.markupPercent))
+                                }
+                                placeholder={`Default ${data.settings.markupPercent}%`}
+                                onChange={(event) =>
+                                  setMarkupDrafts((current) => ({ ...current, [product.id]: event.target.value }))
+                                }
+                              />
+                            </label>
+                            <button type="button" className="btn btn--ghost" disabled={busy} onClick={() => void saveMarkup(product)}>
+                              Save markup
+                            </button>
+                            <label>
+                              Description
+                              <textarea
+                                rows={4}
+                                value={drafts[product.id] ?? product.description}
+                                onChange={(event) =>
+                                  setDrafts((current) => ({ ...current, [product.id]: event.target.value }))
+                                }
+                              />
+                            </label>
+                            <p className="admin-hint">
+                              {product.descriptionSource === 'openai'
+                                ? 'Written with the connected AI.'
+                                : product.descriptionSource === 'edited'
+                                  ? 'Edited here.'
+                                  : 'Using the Printful description.'}
+                            </p>
+                            <div className="store-actions">
+                              <button type="button" className="btn btn--ghost" disabled={busy} onClick={() => void saveDescription(product)}>
+                                Save description
+                              </button>
+                              <button type="button" className="text-link" disabled={busy} onClick={() => void writeDescriptions(product.id)}>
+                                Rewrite
+                              </button>
+                            </div>
+                            {(groups.categories.length > 0 || groups.collections.length > 0) && (
+                              <div className="store-assign">
+                                {groups.categories.map((group) => (
+                                  <label key={group.id} className="admin-check">
+                                    <input
+                                      type="checkbox"
+                                      checked={group.productIds.includes(product.id)}
+                                      onChange={(event) =>
+                                        void setMembership(product, 'categories', group.id, event.target.checked)
+                                      }
+                                    />
+                                    {group.name}
+                                  </label>
+                                ))}
+                                {groups.collections.map((group) => (
+                                  <label key={group.id} className="admin-check">
+                                    <input
+                                      type="checkbox"
+                                      checked={group.productIds.includes(product.id)}
+                                      onChange={(event) =>
+                                        void setMembership(product, 'collections', group.id, event.target.checked)
+                                      }
+                                    />
+                                    {group.name}
+                                  </label>
+                                ))}
+                              </div>
+                            )}
+                          </details>
+                        </div>
+                      </li>
+                    )
+                  })}
                 </ul>
               )}
             </div>
@@ -905,8 +930,7 @@ export function AdminStorePanel() {
           {section === 'coupons' && (
             <div>
               <p className="admin-hint">
-                A coupon removes a percent of the print and shipping markup. Printful’s cost is never discounted. 100%
-                means the customer pays Printful’s price.
+                A code takes a percent off your markup. The print cost is never discounted.
               </p>
               <form className="admin-grid" onSubmit={(event) => void addCoupon(event)}>
                 <label>
@@ -943,7 +967,7 @@ export function AdminStorePanel() {
                   {(data.coupons ?? []).map((coupon) => (
                     <li key={coupon.code}>
                       <strong>{coupon.code}</strong>
-                      <span>{coupon.percent}% off the markup</span>
+                      <span>{coupon.percent}% off markup</span>
                       <label className="admin-check">
                         <input
                           type="checkbox"
@@ -964,20 +988,33 @@ export function AdminStorePanel() {
 
           {section === 'orders' && (
             <div>
-              <p className="admin-hint">
-                The card is charged only after the customer places the order and the print order is accepted. Sync finishes an authorized order. A charge taken before the order was placed is refunded instead of being sent to print. Cancel also refunds a charge that already went through.
-              </p>
-              {data.orders.length === 0 ? (
-                <p className="admin-hint">No orders yet.</p>
+              <div className="store-admin-nav store-admin-nav--sub" role="tablist" aria-label="Order status">
+                <button type="button" role="tab" aria-selected={orderView === 'open'} onClick={() => setOrderView('open')}>
+                  Open ({data.orders.filter((order) => orderIsOpen(order.status)).length})
+                </button>
+                <button type="button" role="tab" aria-selected={orderView === 'closed'} onClick={() => setOrderView('closed')}>
+                  Closed ({data.orders.filter((order) => !orderIsOpen(order.status)).length})
+                </button>
+              </div>
+              {data.orders.filter((order) => orderIsOpen(order.status) === (orderView === 'open')).length === 0 ? (
+                <p className="admin-hint">{orderView === 'open' ? 'No open orders.' : 'No closed orders.'}</p>
               ) : (
                 <ul className="store-orders">
-                  {data.orders.map((order) => (
+                  {data.orders
+                    .filter((order) => orderIsOpen(order.status) === (orderView === 'open'))
+                    .map((order) => (
                     <li key={order.id}>
-                      <strong>{order.status.replaceAll('_', ' ')}</strong>
-                      <span>{new Date(order.createdAt).toLocaleString()}</span>
+                      <div className="store-order__top">
+                        <strong>#{order.id.slice(4, 12)}</strong>
+                        <span className={`store-badge store-badge--${orderIsOpen(order.status) ? 'warn' : 'closed'}`}>
+                          {orderLabel(order.status)}
+                        </span>
+                        <span>{new Date(order.createdAt).toLocaleString()}</span>
+                        <strong>{formatUsd(order.totalCents)}</strong>
+                      </div>
                       <span>{order.email}{order.phone ? ` · ${order.phone}` : ''}</span>
                       <span>
-                        Ship to {order.shipTo.name}, {order.shipTo.line1}
+                        {order.shipTo.name}, {order.shipTo.line1}
                         {order.shipTo.line2 ? `, ${order.shipTo.line2}` : ''}, {order.shipTo.city}
                         {order.shipTo.state ? `, ${order.shipTo.state}` : ''} {order.shipTo.postalCode}, {order.shipTo.country}
                       </span>
@@ -1010,8 +1047,8 @@ export function AdminStorePanel() {
                           <strong>{formatUsd(order.totalCents)}</strong>
                         </li>
                       </ul>
-                      {order.stripePaymentIntentId && <span>Stripe {order.stripePaymentIntentId}</span>}
-                      {order.gelatoOrderIds.length > 0 && <span>Printful {order.gelatoOrderIds.join(', ')}</span>}
+                      {order.stripePaymentIntentId && <span className="admin-hint">Payment {order.stripePaymentIntentId}</span>}
+                      {order.gelatoOrderIds.length > 0 && <span className="admin-hint">Print {order.gelatoOrderIds.join(', ')}</span>}
                       {order.gelatoError && <span className="admin-error">{order.gelatoError}</span>}
                       <div className="store-order__actions">
                         {order.status !== 'canceled' && order.status !== 'fulfilled' && (
@@ -1021,7 +1058,7 @@ export function AdminStorePanel() {
                         )}
                         {order.status !== 'canceled' && (
                           <button type="button" className="text-link" disabled={busy} onClick={() => void cancelOrder(order)}>
-                            Cancel order
+                            Cancel
                           </button>
                         )}
                       </div>
@@ -1034,26 +1071,15 @@ export function AdminStorePanel() {
 
           {section === 'settings' && (
             <div>
-              <p className="admin-hint">
-                Printful’s price is what Printful charges this account. The print markup is the default. A product can
-                override that percentage. Stripe takes the card payment.
-              </p>
               <ul className="store-secrets">
-                <li>{data.secrets.printful ? 'Printful API token is set' : 'Missing PRINTFUL_API_TOKEN'}</li>
-                <li>{data.secrets.stripeSecret ? 'Stripe secret key is set' : 'Missing STRIPE_SECRET_KEY'}</li>
-                <li>
-                  {data.secrets.stripePublishable ? 'Stripe publishable key is set' : 'Missing STRIPE_PUBLISHABLE_KEY'}
-                </li>
+                <li>{data.secrets.printful ? 'Printful connected' : 'Printful token missing'}</li>
+                <li>{data.secrets.stripeSecret && data.secrets.stripePublishable ? 'Card payments connected' : 'Card payments incomplete'}</li>
                 <li>
                   {data.secrets.stripeWebhook
-                    ? 'Stripe webhook secret is set'
-                    : 'STRIPE_WEBHOOK_SECRET is not set yet. Payments can still complete from the order page.'}
+                    ? 'Payment webhook connected'
+                    : 'Payment webhook not set. A finished checkout can still place the order.'}
                 </li>
-                <li>
-                  {data.secrets.openai
-                    ? `${data.secrets.openaiSource === 'cloudflare' ? 'API key is set as a Cloudflare secret' : 'API key is saved here'}. ${data.secrets.aiBaseUrl} · ${data.secrets.aiModel || 'model not set'}`
-                    : 'AI is not connected yet'}
-                </li>
+                <li>{data.secrets.openai ? 'Description writer connected' : 'Description writer not connected'}</li>
               </ul>
               <div className="store-actions">
                 <button type="button" className="btn btn--ghost" disabled={testing} onClick={() => void testConnections()}>
@@ -1070,6 +1096,7 @@ export function AdminStorePanel() {
                 </ul>
               )}
               <form className="admin-grid" onSubmit={(event) => void saveSettings(event)}>
+                <h3 className="admin-span-2">Pricing</h3>
                 <label>
                   Print markup %
                   <input inputMode="decimal" value={markup} onChange={(event) => setMarkup(event.target.value)} />
@@ -1082,8 +1109,9 @@ export function AdminStorePanel() {
                     onChange={(event) => setShippingMarkup(event.target.value)}
                   />
                 </label>
+                <h3 className="admin-span-2">Printful</h3>
                 <label className="admin-span-2">
-                  Printful store id
+                  Store id
                   <input
                     value={storeId}
                     onChange={(event) => setStoreId(event.target.value)}
@@ -1091,11 +1119,11 @@ export function AdminStorePanel() {
                   />
                 </label>
                 <p className="admin-hint admin-span-2">
-                  Create the products in a Printful store set to Manual order / API. Paste that store’s number here if
-                  the account has more than one store. Orders use the design saved on the product.
+                  Use the Manual / API store. Paste its number when the account has more than one store.
                 </p>
+                <h3 className="admin-span-2">Descriptions</h3>
                 <label className="admin-span-2">
-                  AI API URL
+                  API address
                   <input
                     value={aiBaseUrl}
                     onChange={(event) => setAiBaseUrl(event.target.value)}
@@ -1126,11 +1154,6 @@ export function AdminStorePanel() {
                   <input type="checkbox" checked={clearOpenai} onChange={(event) => setClearOpenai(event.target.checked)} />
                   Remove the saved API key
                 </label>
-                <p className="admin-hint admin-span-2">
-                  Open WebUI uses the address ending in /api and the model name shown in that instance. Gemini uses
-                  https://generativelanguage.googleapis.com/v1beta/openai and a model such as gemini-2.5-flash. The
-                  address has to be reachable from the internet. The key is not shown again after you save it.
-                </p>
                 <div className="admin-span-2 store-actions">
                   <button className="btn btn--accent" type="submit" disabled={busy}>
                     Save settings
