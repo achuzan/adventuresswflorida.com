@@ -1003,7 +1003,7 @@ async function adminPayload(env: Env, refresh: boolean, origin: string) {
         hasPrintFile: true,
         imageCount: productImages(product).length,
         description: shownDescription(product, copy),
-        descriptionSource: copy[product.id]?.source ?? 'gelato',
+        descriptionSource: copy[product.id]?.source ?? 'printful',
         pricePending: product.variants.some((variant) => !prices.has(variant.productUid)),
         wholesaleCents: wholesale,
         markupPercent: settings.markupByProduct[product.id] ?? null,
@@ -1514,7 +1514,7 @@ async function adminSettings(request: Request, env: Env) {
       ...new Set(raw.split(/[\s,]+/).map((id) => id.trim()).filter(Boolean)),
     ]
     if (templateIds.some((id) => !/^[A-Za-z0-9_-]{8,80}$/.test(id))) {
-      throw new HttpError(400, 'Each template id should be the id Gelato shows on the template')
+      throw new HttpError(400, 'Each template id should be the id shown on the template')
     }
     if (templateIds.length > 50) throw new HttpError(400, 'Paste up to 50 template ids')
     settings.templateIds = templateIds
@@ -1663,7 +1663,7 @@ async function adminPrintFile(request: Request, env: Env, productId: string, var
   await requireAdmin(request, env)
   const catalog = await loadCatalog(env, false)
   const product = catalog.products.find((item) => item.id === productId)
-  if (!product) throw new HttpError(404, 'That product is not in the Gelato catalog')
+  if (!product) throw new HttpError(404, 'That product is not in the Printful catalog')
   const variant = product.variants.find((item) => item.id === variantId)
   if (!variant) throw new HttpError(404, 'That size is not on this product')
   const origin = checkoutOrigin(request)
@@ -1680,7 +1680,7 @@ async function adminPrintFile(request: Request, env: Env, productId: string, var
       const raw = typeof body.url === 'string' ? body.url : ''
       const link = parsePrintLink(raw)
       if (needsCalendarPdf(product) && !link.url.toLowerCase().includes('.pdf')) {
-        throw new HttpError(400, 'Calendars need a public link to the PDF made from Gelato’s template')
+        throw new HttpError(400, 'Calendars need a public link to the print PDF')
       }
       await savePrintLink(env, {
         productId: product.id,
@@ -1702,7 +1702,7 @@ async function adminPrintFile(request: Request, env: Env, productId: string, var
     const described = describePrintUpload(file)
     if (!described) throw new HttpError(400, 'Use a JPG, PNG, or WebP photo, or a PDF')
     if (needsCalendarPdf(product) && described.contentType !== 'application/pdf') {
-      throw new HttpError(400, 'Calendars need the PDF made from Gelato’s template')
+      throw new HttpError(400, 'Calendars need the print PDF')
     }
     if (file.size > printByteLimit(env)) {
       const mb = Math.round(printByteLimit(env) / (1024 * 1024))

@@ -39,7 +39,7 @@ type AdminProduct = {
   hasPrintFile: boolean
   imageCount: number
   description: string
-  descriptionSource: 'openai' | 'edited' | 'gelato'
+  descriptionSource: 'openai' | 'edited' | 'printful'
   pricePending: boolean
   wholesaleCents: number | null
   retailCents: number | null
@@ -468,7 +468,7 @@ export function AdminStorePanel() {
               ...current,
               products: current.products.map((item) =>
                 item.id === product.id
-                  ? { ...item, description, descriptionSource: description.trim() ? 'edited' : 'gelato' }
+                  ? { ...item, description, descriptionSource: description.trim() ? 'edited' : 'printful' }
                   : item,
               ),
             }

@@ -61,11 +61,11 @@ export function parsePrintLink(value: string) {
     throw new PrintFileError('Paste a public https link to the print file')
   }
   if (url.protocol !== 'https:' || url.username || url.password) {
-    throw new PrintFileError('Gelato needs a public https link, with no password in the address')
+    throw new PrintFileError('Use a public https link, with no password in the address')
   }
   const host = url.hostname.toLowerCase()
   if (host === 'localhost' || host === '127.0.0.1' || host.endsWith('.local')) {
-    throw new PrintFileError('Gelato cannot download a file from this computer. Use a public https link.')
+    throw new PrintFileError('That link points at this computer. Use a public https link.')
   }
   if (host === 'dropbox.com' || host === 'www.dropbox.com') {
     url.hostname = 'www.dropbox.com'
