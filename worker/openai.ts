@@ -175,44 +175,89 @@ export async function writeProductDescription(connection: AiConnection, product:
   }
 }
 
+type ChatMessage = { role: string; content: unknown }
+
+function allowsThinkingSwitch(baseUrl: string) {
+  return !baseUrl.includes('api.openai.com') && !baseUrl.includes('generativelanguage.googleapis.com')
+}
+
+function chatBody(connection: AiConnection, messages: ChatMessage[], maxTokens: number, direct: boolean) {
+  const body: {
+    model: string
+    temperature: number
+    max_tokens: number
+    messages: ChatMessage[]
+    options?: { think: false }
+    reasoning_effort?: 'none'
+  } = {
+    model: connection.model,
+    temperature: 0.4,
+    max_tokens: maxTokens,
+    messages,
+  }
+  if (!direct) return body
+  if (connection.baseUrl.includes('generativelanguage.googleapis.com')) body.reasoning_effort = 'none'
+  else if (allowsThinkingSwitch(connection.baseUrl)) body.options = { think: false }
+  return body
+}
+
+function rejectedThinkingSwitch(message: string) {
+  return /think|options|reasoning_effort|unknown|unexpected|unrecognized|extra/i.test(message)
+}
+
 async function complete(connection: AiConnection, text: string, image: string, maxTokens: number, system?: string) {
   const userContent = image.startsWith('https://')
     ? [{ type: 'text', text }, { type: 'image_url', image_url: { url: image } }]
     : text
-  const res = await fetch(`${connection.baseUrl}/chat/completions`, {
-    method: 'POST',
-    headers: {
-      ...authHeaders(connection),
-      'Content-Type': 'application/json',
+  const messages: ChatMessage[] = [
+    {
+      role: 'system',
+      content:
+        system ||
+        'You write accurate catalog copy for a wildlife photography print shop. Sound specific and calm. Never mention Gelato, wholesale cost, or that you are an AI.',
     },
-    signal: AbortSignal.timeout(45000),
-    body: JSON.stringify({
-      model: connection.model,
-      temperature: 0.4,
-      max_tokens: maxTokens,
-      messages: [
-        {
-          role: 'system',
-          content:
-            system ||
-            'You write accurate catalog copy for a wildlife photography print shop. Sound specific and calm. Never mention Gelato, wholesale cost, or that you are an AI.',
-        },
-        { role: 'user', content: userContent },
-      ],
-    }),
-  })
-  const data = (await res.json().catch(() => null)) as {
-    error?: { message?: string } | string
-    choices?: { message?: { content?: unknown } }[]
-  } | null
-  if (!res.ok) {
-    const error = data?.error
-    const message = typeof error === 'string' ? error : error?.message
-    throw new Error(scrub(message || `The AI service returned ${res.status}`))
+    { role: 'user', content: userContent },
+  ]
+  let direct = true
+  let tokens = maxTokens
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const res = await fetch(`${connection.baseUrl}/chat/completions`, {
+      method: 'POST',
+      headers: {
+        ...authHeaders(connection),
+        'Content-Type': 'application/json',
+      },
+      signal: AbortSignal.timeout(45000),
+      body: JSON.stringify(chatBody(connection, messages, tokens, direct)),
+    })
+    const data = (await res.json().catch(() => null)) as {
+      error?: { message?: string } | string
+      choices?: { finish_reason?: string; message?: { content?: unknown } }[]
+    } | null
+    if (!res.ok) {
+      const error = data?.error
+      const message = typeof error === 'string' ? error : error?.message || ''
+      if (attempt === 0 && direct && rejectedThinkingSwitch(message)) {
+        direct = false
+        continue
+      }
+      throw new Error(scrub(message || `The AI service returned ${res.status}`))
+    }
+    const content = visibleAnswer(data?.choices?.[0]?.message?.content)
+    if (content) return content
+    if (attempt === 0 && data?.choices?.[0]?.finish_reason === 'length') {
+      tokens = Math.max(tokens * 2, 1200)
+      continue
+    }
+    throw new Error('The AI service did not return a description')
   }
-  const content = messageText(data?.choices?.[0]?.message?.content).trim()
-  if (!content) throw new Error('The AI service did not return a description')
-  return content
+  throw new Error('The AI service did not return a description')
+}
+
+function visibleAnswer(content: unknown) {
+  return messageText(content)
+    .replace(/<think>[\s\S]*?<\/think>/gi, '')
+    .trim()
 }
 
 function messageText(content: unknown): string {
@@ -221,10 +266,12 @@ function messageText(content: unknown): string {
   return content
     .map((part) => {
       if (typeof part === 'string') return part
-      if (part && typeof part === 'object' && typeof (part as { text?: unknown }).text === 'string') {
-        return (part as { text: string }).text
-      }
-      return ''
+      if (!part || typeof part !== 'object') return ''
+      const row = part as { text?: unknown; type?: unknown; thought?: unknown }
+      if (row.thought === true) return ''
+      const type = typeof row.type === 'string' ? row.type : ''
+      if (type === 'reasoning' || type === 'thinking' || type === 'thought') return ''
+      return typeof row.text === 'string' ? row.text : ''
     })
     .filter(Boolean)
     .join('\n')
