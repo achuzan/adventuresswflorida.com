@@ -209,6 +209,18 @@ export const usStates = [
 
 const STATE_REQUIRED = new Set(['US', 'CA', 'AU'])
 
+/** Printful's generic catalog photo, such as an empty canvas, rather than the uploaded design. */
+export function catalogMockup(url: string) {
+  return /\/products\/\d+\//.test(url)
+}
+
+/** The picture to show large: the uploaded design, not a blank catalog mockup. */
+export function designPhoto(preview: string, images: string[]) {
+  const art = images.filter((url) => url && !catalogMockup(url))
+  if (preview && !catalogMockup(preview)) return preview
+  return art.find((url) => /\/files\//.test(url)) || art[0] || preview
+}
+
 export function formatUsd(cents: number) {
   return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(cents / 100)
 }

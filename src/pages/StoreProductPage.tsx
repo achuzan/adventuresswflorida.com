@@ -4,7 +4,7 @@ import { useCart } from '../data/CartProvider'
 import { storeJson } from '../data/store-client'
 import { SeoHead } from '../seo'
 import { site } from '../site'
-import { formatUsd, variantForSelection, type StoreProductPublic } from '../shared/store'
+import { catalogMockup, designPhoto, formatUsd, variantForSelection, type StoreProductPublic } from '../shared/store'
 
 export function StoreProductPage() {
   const { productId = '' } = useParams()
@@ -63,6 +63,9 @@ export function StoreProductPage() {
       ? variantForSelection(product.variants, selected) ?? product.variants.find((item) => item.id === variantId)
       : product.variants.find((item) => item.id === variantId) ?? product.variants[0]
     : undefined
+  const listed = product?.images?.length ? product.images : product?.previewUrl ? [product.previewUrl] : []
+  const artwork = listed.filter((url) => !catalogMockup(url))
+  const images = artwork.length ? artwork : listed
 
   useEffect(() => {
     if (!product || prepared.current === product.id) return
@@ -75,13 +78,14 @@ export function StoreProductPage() {
     setVariantId(first.id)
     setQuantity(1)
     setAdded(false)
-    setActiveImage(first.previewUrl || product.images?.[0] || product.previewUrl)
+    setActiveImage(designPhoto(first.previewUrl, product.images || []))
   }, [product])
 
+  const imageKey = images.join('|')
   useEffect(() => {
-    const next = variant?.previewUrl
+    const next = designPhoto(variant?.previewUrl || '', images)
     if (next) setActiveImage(next)
-  }, [variant?.id, variant?.previewUrl])
+  }, [variant?.id, variant?.previewUrl, imageKey])
 
   function chooseOption(name: string, value: string) {
     if (!product) return
@@ -115,13 +119,12 @@ export function StoreProductPage() {
       quantity,
       title: product.title,
       variantTitle: variant.title,
-      previewUrl: variant.previewUrl || product.previewUrl,
+      previewUrl: designPhoto(variant.previewUrl, images) || product.previewUrl,
       unitPriceCents: variant.priceCents,
     })
     setAdded(true)
   }
 
-  const images = product?.images?.length ? product.images : product?.previewUrl ? [product.previewUrl] : []
   const image = activeImage || images[0] || ''
   const category = categories[0]
   const optionSummary = variant?.options.map((option) => option.value).filter(Boolean).join(', ')

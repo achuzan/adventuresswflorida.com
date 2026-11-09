@@ -119,7 +119,7 @@ function normalizeProduct(row: unknown): InternalProduct | null {
       const url = httpsUrl(file.preview_url) || httpsUrl(file.thumbnail_url)
       return url ? [url] : []
     })
-    const preview = httpsUrl(product.image) || images[0] || ''
+    const preview = images.find((url) => url.includes('/files/')) || images[0] || httpsUrl(product.image) || ''
     return [
       {
         id: variantId,
