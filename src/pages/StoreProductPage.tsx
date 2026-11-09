@@ -154,17 +154,19 @@ export function StoreProductPage() {
         <article className="store-product">
           <div className="store-gallery">
             {images.length > 1 && (
-              <div className="store-thumbs" aria-label="Product images">
-                {images.map((src) => (
-                  <button
-                    key={src}
-                    type="button"
-                    className={src === image ? 'is-selected' : ''}
-                    onClick={() => setActiveImage(src)}
-                  >
-                    <img src={src} alt="" />
-                  </button>
-                ))}
+              <div className="store-thumbs">
+                <div className="store-thumbs__list" aria-label="Product images">
+                  {images.map((src) => (
+                    <button
+                      key={src}
+                      type="button"
+                      className={src === image ? 'is-selected' : ''}
+                      onClick={() => setActiveImage(src)}
+                    >
+                      <img src={src} alt="" />
+                    </button>
+                  ))}
+                </div>
               </div>
             )}
             <div className="store-product__stage">

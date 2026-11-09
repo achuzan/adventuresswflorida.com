@@ -1949,7 +1949,7 @@ main:has(.page--store) {
   display: grid;
   grid-template-columns: 4.6rem minmax(0, 1fr);
   gap: 0.7rem;
-  align-items: start;
+  align-items: stretch;
   min-width: 0;
 }
 
@@ -1962,12 +1962,21 @@ main:has(.page--store) {
 }
 
 .store-thumbs {
-  display: flex;
-  flex-direction: column;
+  position: relative;
   grid-column: 1;
   grid-row: 1;
-  gap: 0.45rem;
   min-width: 0;
+  min-height: 0;
+}
+
+.store-thumbs__list {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
 .store-thumbs button {
@@ -2002,25 +2011,26 @@ main:has(.page--store) {
   grid-column: 2;
   grid-row: 1;
   display: grid;
-  place-items: center;
+  place-items: start;
   min-width: 0;
-  min-height: 28rem;
-  background: #f7f4ef;
-  border: 1px solid var(--line);
-  border-radius: 0.75rem;
-  overflow: hidden;
+  min-height: 0;
+  background: transparent;
 }
 
 .store-product__stage .store-product__photo {
-  width: 100%;
-  height: 28rem;
+  width: auto;
+  height: auto;
   max-width: 100%;
+  max-height: min(40rem, 72vh);
   aspect-ratio: auto;
   object-fit: contain;
-  background: #f7f4ef;
+  background: transparent;
 }
 
 .store-buy {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  align-self: start;
   min-width: 0;
   padding: 1.25rem;
   background: #fff;
@@ -2034,7 +2044,8 @@ main:has(.page--store) {
 }
 
 .store-product__copy {
-  grid-column: 1 / -1;
+  grid-column: 1;
+  grid-row: 2;
   margin-top: 0.5rem;
   padding: 1.1rem 0.2rem 0.2rem;
   border-top: 1px solid var(--line);
@@ -2792,7 +2803,9 @@ main:has(.page--store) {
 
   .store-gallery,
   .store-product__stage,
-  .store-thumbs {
+  .store-thumbs,
+  .store-buy,
+  .store-product__copy {
     grid-column: 1;
     grid-row: auto;
   }
@@ -2802,17 +2815,24 @@ main:has(.page--store) {
     grid-template-columns: minmax(0, 1fr);
   }
 
-  .store-thumbs {
+  .store-thumbs,
+  .store-thumbs__list {
+    position: static;
+    overflow: visible;
+  }
+
+  .store-thumbs__list {
     flex-direction: row;
     flex-wrap: wrap;
   }
 
   .store-product__stage .store-product__photo {
-    height: 18rem;
+    height: auto;
+    max-height: 22rem;
   }
 
   .store-product__stage {
-    min-height: 18rem;
+    min-height: 0;
   }
 
   .store-hero {
