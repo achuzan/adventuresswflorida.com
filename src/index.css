@@ -1947,7 +1947,7 @@ main:has(.page--store) {
 
 .store-gallery {
   display: grid;
-  grid-template-columns: 4.6rem minmax(0, 1fr);
+  grid-template-columns: 6.75rem minmax(0, 1fr);
   gap: 0.7rem;
   align-items: stretch;
   min-width: 0;
@@ -1975,14 +1975,17 @@ main:has(.page--store) {
   display: flex;
   flex-direction: column;
   gap: 0.45rem;
+  overflow-x: hidden;
   overflow-y: auto;
   overscroll-behavior: contain;
+  scrollbar-gutter: stable;
 }
 
 .store-thumbs button {
-  width: 4.6rem;
-  height: 4.6rem;
-  flex: 0 0 4.6rem;
+  width: 100%;
+  height: auto;
+  aspect-ratio: 1;
+  flex: 0 0 auto;
   padding: 0;
   border: 2px solid transparent;
   border-radius: 0.35rem;
@@ -2824,6 +2827,14 @@ main:has(.page--store) {
   .store-thumbs__list {
     flex-direction: row;
     flex-wrap: wrap;
+    overflow: visible;
+    scrollbar-gutter: auto;
+  }
+
+  .store-thumbs button {
+    width: 5.4rem;
+    height: 5.4rem;
+    flex-basis: 5.4rem;
   }
 
   .store-product__stage .store-product__photo {
