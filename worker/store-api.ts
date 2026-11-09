@@ -41,7 +41,6 @@ import {
   getGroups,
   getOrder,
   getSettings,
-  productMarkup,
   listOrders,
   saveCoupons,
   saveCopy,
@@ -81,6 +80,7 @@ import {
   markupDiscountCents,
   normalizeCouponCode,
   sanitizeHtml,
+  sellingUnitCents,
   toCents,
   validateAddress,
   withMarkup,
@@ -197,7 +197,6 @@ function shownDescription(product: InternalProduct, copy: Record<string, Product
 
 function toPublic(
   product: InternalProduct,
-  markupPercent: number,
   prices: Map<string, number | null>,
   categoryIds: string[],
   copy: Record<string, ProductCopy>,
@@ -212,14 +211,15 @@ function toPublic(
     images: productImages(product),
     categoryIds,
     variants: product.variants.map((variant) => {
-      const wholesale = prices.get(variant.productUid)
+      const wholesale = prices.get(variant.productUid) ?? null
+      const priceCents = sellingUnitCents(wholesale, variant.retailCents)
       return {
         id: variant.id,
         title: variant.title,
         options: variant.options,
         previewUrl: variant.previewUrl,
-        priceCents: wholesale == null ? null : withMarkup(wholesale, markupPercent),
-        pricePending: !prices.has(variant.productUid),
+        priceCents,
+        pricePending: priceCents == null && !prices.has(variant.productUid),
       }
     }),
   }
@@ -406,6 +406,7 @@ async function priceCart(
       variantId: variant.id,
       itemReferenceId: `${product.id}:${variant.id}`,
       productUid: variant.productUid,
+      printfulRetailCents: variant.retailCents ?? null,
       title: product.title,
       variantTitle: variant.title,
       quantity: line.quantity,
@@ -463,7 +464,9 @@ async function priceCart(
   const pricedLines = resolved.map((line) => {
     const wholesaleCents = wholesale.get(line.itemReferenceId)
     if (wholesaleCents == null) throw new HttpError(502, 'Printful did not price one of the items')
-    const retailCents = withMarkup(wholesaleCents, productMarkup(settings, line.productId))
+    const unitWholesale = prices.get(line.productUid) ?? null
+    const unitRetail = sellingUnitCents(unitWholesale, line.printfulRetailCents)
+    const retailCents = unitRetail == null ? wholesaleCents : unitRetail * line.quantity
     const discountCents = markupDiscountCents(wholesaleCents, retailCents, coupon?.percent ?? 0)
     return {
       ...line,
@@ -905,6 +908,15 @@ function stripeMessage(error: unknown) {
   return message
 }
 
+function lowestSelling(product: InternalProduct, prices: Map<string, number | null>) {
+  const values = product.variants.flatMap((variant) => {
+    const cents = sellingUnitCents(prices.get(variant.productUid) ?? null, variant.retailCents)
+    return cents == null ? [] : [cents]
+  })
+  if (!values.length) return null
+  return Math.min(...values)
+}
+
 function lowestWholesale(product: InternalProduct, prices: Map<string, number | null>) {
   const values = product.variants.flatMap((variant) => {
     const cents = prices.get(variant.productUid)
@@ -1004,10 +1016,13 @@ async function adminPayload(env: Env, refresh: boolean, origin: string) {
         imageCount: productImages(product).length,
         description: shownDescription(product, copy),
         descriptionSource: copy[product.id]?.source ?? 'printful',
-        pricePending: product.variants.some((variant) => !prices.has(variant.productUid)),
+        pricePending: product.variants.some((variant) => {
+          const selling = sellingUnitCents(prices.get(variant.productUid) ?? null, variant.retailCents)
+          return selling == null && !prices.has(variant.productUid)
+        }),
         wholesaleCents: wholesale,
         markupPercent: settings.markupByProduct[product.id] ?? null,
-        retailCents: wholesale == null ? null : withMarkup(wholesale, productMarkup(settings, product.id)),
+        retailCents: lowestSelling(product, prices),
       }
     }),
     orders: orders.map(adminOrder),
@@ -1115,7 +1130,7 @@ async function publicList(env: Env) {
       )
     : new Map<string, number | null>()
   const products = visible.map((product) =>
-    toPublic(product, productMarkup(settings, product.id), prices, categoryIdsFor(groups, product.id), copy),
+    toPublic(product, prices, categoryIdsFor(groups, product.id), copy),
   )
   return json({
     products,
@@ -1142,7 +1157,7 @@ async function publicOne(env: Env, id: string) {
         (uid) => fetchPrintfulVariantCents(token, uid),
       )
     : new Map<string, number | null>()
-  const pub = toPublic(product, productMarkup(settings, product.id), prices, categoryIdsFor(groups, product.id), copy)
+  const pub = toPublic(product, prices, categoryIdsFor(groups, product.id), copy)
   return json({
     product: pub,
     categories: groups.categories

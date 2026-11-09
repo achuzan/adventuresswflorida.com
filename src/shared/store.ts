@@ -228,6 +228,15 @@ export function withMarkup(wholesaleCents: number, percent: number) {
   return Math.max(0, Math.round(wholesaleCents * (1 + percent / 100)))
 }
 
+/** Customer price is the retail price set in Printful. The site does not add a markup. */
+export function sellingUnitCents(
+  wholesaleCents: number | null,
+  printfulRetailCents: number | null | undefined,
+) {
+  if (printfulRetailCents != null && printfulRetailCents > 0) return printfulRetailCents
+  return wholesaleCents
+}
+
 export function normalizeCouponCode(value: string) {
   return value.trim().toUpperCase().replace(/\s+/g, '')
 }

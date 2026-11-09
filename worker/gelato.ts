@@ -19,6 +19,7 @@ export type InternalVariant = {
   previewUrl: string
   images: string[]
   files: PrintFile[]
+  retailCents?: number | null
 }
 
 export type InternalProduct = {

@@ -58,7 +58,7 @@ npx wrangler secret put STRIPE_WEBHOOK_SECRET
 
 `/store` sells Printful products (prints, calendars, and mugs) without replacing the on-site calendar pages. Design each product in a Printful store set to Manual order / API. Products stay hidden until they are switched on at `/admin`.
 
-Printful’s price is the print cost. The print markup in admin applies to every product, and a product can override that percentage. Checkout quotes live Printful shipping, adds Stripe Tax, and takes the card in a Stripe Payment Element. Card numbers are not stored on this site. After the card is authorized, the Worker creates the Printful order for the saved design, then captures the card. Printful bills the card saved on the Printful account when that order is confirmed.
+Customers pay the retail price set in Printful. The site does not add a markup. Checkout quotes live Printful shipping, adds Stripe Tax, and takes the card in a Stripe Payment Element. Card numbers are not stored on this site. After the card is authorized, the Worker creates the Printful order for the saved design, then captures the card. Printful bills the card saved on the Printful account when that order is confirmed.
 
 Stripe webhook endpoint: `https://adventuresswflorida.com/api/stripe/webhook`
 

@@ -85,6 +85,13 @@ function synced(value: unknown) {
   return value === true || value === 1
 }
 
+function retailCentsOf(item: Record<string, unknown>) {
+  const currency = (text(item.currency) || 'USD').toUpperCase()
+  const price = Number(item.retail_price)
+  if (currency !== 'USD' || !Number.isFinite(price) || price <= 0) return null
+  return toCents(price)
+}
+
 function sizeOf(name: string) {
   const parts = name.split('/').map((part) => part.trim()).filter(Boolean)
   return parts.length > 1 ? parts[parts.length - 1]! : ''
@@ -122,6 +129,7 @@ function normalizeProduct(row: unknown): InternalProduct | null {
         previewUrl: preview,
         images,
         files: [],
+        retailCents: retailCentsOf(item),
         ready: synced(item.synced),
       },
     ]

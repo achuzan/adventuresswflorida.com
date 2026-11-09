@@ -150,7 +150,6 @@ export function AdminStorePanel() {
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
-  const [markup, setMarkup] = useState('0')
   const [shippingMarkup, setShippingMarkup] = useState('0')
   const [storeId, setStoreId] = useState('')
   const [checks, setChecks] = useState<ConnectionCheck[] | null>(null)
@@ -166,7 +165,6 @@ export function AdminStorePanel() {
   const [aiApiKey, setAiApiKey] = useState('')
   const [clearOpenai, setClearOpenai] = useState(false)
   const [drafts, setDrafts] = useState<Record<string, string>>({})
-  const [markupDrafts, setMarkupDrafts] = useState<Record<string, string>>({})
 
   async function load(refresh = false, fillForm = false, mergePrices = false) {
     const payload = refresh
@@ -197,7 +195,6 @@ export function AdminStorePanel() {
       }
     })
     if (fillForm) {
-      setMarkup(String(payload.settings.markupPercent))
       setShippingMarkup(String(payload.settings.shippingMarkupPercent))
       setStoreId(payload.settings.storeId)
       setAiBaseUrl(payload.settings.aiBaseUrl)
@@ -251,7 +248,6 @@ export function AdminStorePanel() {
       method: 'PATCH',
       credentials: 'same-origin',
       body: JSON.stringify({
-        markupPercent: Number(markup),
         shippingMarkupPercent: Number(shippingMarkup),
         storeId,
         aiBaseUrl,
@@ -562,26 +558,6 @@ export function AdminStorePanel() {
     }
   }
 
-  async function saveMarkup(product: AdminProduct) {
-    const raw = (markupDrafts[product.id] ?? (product.markupPercent == null ? '' : String(product.markupPercent))).trim()
-    setBusy(true)
-    setError(null)
-    setNotice(null)
-    try {
-      await storeJson(`/api/admin/store/products/${encodeURIComponent(product.id)}`, {
-        method: 'PATCH',
-        credentials: 'same-origin',
-        body: JSON.stringify({ markupPercent: raw === '' ? null : Number(raw) }),
-      })
-      await load()
-      setNotice(raw === '' ? `Using the default markup for ${product.title}` : `Saved ${raw}% markup for ${product.title}`)
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not save that markup')
-    } finally {
-      setBusy(false)
-    }
-  }
-
   async function refresh() {
     setBusy(true)
     setError(null)
@@ -730,23 +706,6 @@ export function AdminStorePanel() {
                           </div>
                           <details className="store-product__edit">
                             <summary>Edit</summary>
-                            <label>
-                              Markup %
-                              <input
-                                inputMode="decimal"
-                                value={
-                                  markupDrafts[product.id] ??
-                                  (product.markupPercent == null ? '' : String(product.markupPercent))
-                                }
-                                placeholder={`Default ${data.settings.markupPercent}%`}
-                                onChange={(event) =>
-                                  setMarkupDrafts((current) => ({ ...current, [product.id]: event.target.value }))
-                                }
-                              />
-                            </label>
-                            <button type="button" className="btn btn--ghost" disabled={busy} onClick={() => void saveMarkup(product)}>
-                              Save markup
-                            </button>
                             <label>
                               Description
                               <textarea
@@ -1096,11 +1055,7 @@ export function AdminStorePanel() {
                 </ul>
               )}
               <form className="admin-grid" onSubmit={(event) => void saveSettings(event)}>
-                <h3 className="admin-span-2">Pricing</h3>
-                <label>
-                  Print markup %
-                  <input inputMode="decimal" value={markup} onChange={(event) => setMarkup(event.target.value)} />
-                </label>
+                <h3 className="admin-span-2">Shipping</h3>
                 <label>
                   Shipping markup %
                   <input
@@ -1109,6 +1064,9 @@ export function AdminStorePanel() {
                     onChange={(event) => setShippingMarkup(event.target.value)}
                   />
                 </label>
+                <p className="admin-hint admin-span-2">
+                  Product prices come from Printful. This percent is added only to the shipping quote.
+                </p>
                 <h3 className="admin-span-2">Printful</h3>
                 <label className="admin-span-2">
                   Store id
